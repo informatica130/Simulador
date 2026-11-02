@@ -8,7 +8,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { loadData, makeGeo, heightSampler, QSPEC_MONTH } from './data.js';
+import { loadData, makeGeo, heightSampler, QSPEC_MONTH, drainageAt, channelAt } from './data.js';
 import { SCENARIOS, CATALOG, GAUGES, MONTHS, VENTS } from './config.js';
 import { EruptionSource, fissureVents } from './eruption.js';
 import { Solver } from './solver.js';
@@ -115,16 +115,17 @@ function makeStars() {
 }
 
 // ------------------------------------------------------------------ puntos de muestreo
+// Ubica el sensor en el cauce con mayor área drenada cerca del punto (el río principal, no un afluente)
 function snapRiver(x, y, r = 0.45) {
-  let best = null, bz = 1e9; const c = D.GR.cell;
+  let best = null, ba = -1; const c = D.GR.cell;
   for (let dy = -r; dy <= r; dy += c) for (let dx = -r; dx <= r; dx += c) {
     const [i, j] = geo.cellOf(x + dx, y + dy); if (i < 0 || j < 0 || i >= D.nx || j >= D.ny) continue; const k = j * D.nx + i;
-    if (!D.river[k]) continue; const z = D.dem[k] + Math.hypot(dx, dy) * 15; if (z < bz) { bz = z; best = geo.xyOf(i, j); }
+    if (!channelAt(D, k)) continue; const a = drainageAt(D, x + dx, y + dy) / (1 + Math.hypot(dx, dy) * 2); if (a > ba) { ba = a; best = geo.xyOf(i, j); }
   }
   return best ? { x: best[0], y: best[1] } : { x, y };
 }
 function setupPoints() {
-  gaugePts = GAUGES.map(g => ({ ...g, ...snapRiver(g.x, g.y) }));
+  gaugePts = GAUGES.map(g => { const p = snapRiver(g.x, g.y); return { ...g, ...p, x0: p.x, y0: p.y }; });
   const town = n => D.places.pois.find(p => p[3] === n);
   const sm = town('Santa María de Llaima');
   sites = [
@@ -133,6 +134,16 @@ function setupPoints() {
     sm ? { name: 'Santa María de Llaima', x: sm[0], y: sm[1] } : { name: 'Allipén bajo', x: -5, y: -20 },
     { name: 'Curacautín', x: -13.7, y: 28.6 }, { name: 'Malalcahuello', x: 12.94, y: 24.43 },
   ];
+  rebuildSampler();
+}
+// Tras equilibrar los ríos, mueve cada sensor a la celda vecina por donde realmente corre el agua en el motor
+function resnapGauges() {
+  if (!run.useBase) return;
+  const R = 3, ck = sol.cellKm, cand = [];
+  gaugePts.forEach((g, gi) => { if (g.user) return; for (let j = -R; j <= R; j++) for (let i = -R; i <= R; i++) cand.push({ gi, x: g.x0 + i * ck, y: g.y0 + j * ck, d: Math.hypot(i, j) }); });
+  sol.makeSampler('snap', cand); const r = sol.sample('snap'); const best = {};
+  cand.forEach((c, k) => { const sc = r[k].base[0] / (1 + c.d * 0.15); if (!best[c.gi] || sc > best[c.gi].sc) best[c.gi] = { sc, x: c.x, y: c.y }; });
+  for (const gi in best) if (best[gi].sc > 0.01) { gaugePts[gi].x = best[gi].x; gaugePts[gi].y = best[gi].y; }
   rebuildSampler();
 }
 function rebuildSampler() {
@@ -160,7 +171,9 @@ function applyScenario(key, fromPreset) {
   const ref = (vents && vents[0]) || (sc.vents && sc.vents[0]) || sc.fissure || { x: 0, y: 0 };
   const ventZ = hAt(ref.x, ref.y);
   src = new EruptionSource(sc, { mult: Math.pow(10, S.mult), emult: Math.pow(10, S.emult), wind: { to: S.wto, speed: S.wsp }, vents, T0: S.T0, ventZ });
+  const hadSnap = sol.baseMonth;
   run.start(src, { month: S.month, rain: S.rain, rainStart: S.rainS, melt: S.melt, erode: S.erode ? 1 : 0, onSpin: () => setLoad && $('loadtxt') && setLoad('Equilibrando el caudal de los ríos para ' + MONTHS[S.month] + '…', 0.9) });
+  if (hadSnap !== sol.baseMonth) resnapGauges();
   fx.clear(); ovl.setVents(src.vents, S.ex);
   events = []; evFlags = {}; series.gauges = gaugePts.map(() => []); $('log').innerHTML = '';
   S.runTo = null; S.tEnd = Math.min(4 * 86400, src.tEnd + 3 * 3600);
@@ -582,7 +595,7 @@ function showProbe(x, y, live) {
   if (!live) { el.style.left = clamp(S.probe.sx + 14, 8, innerWidth - 310) + 'px'; el.style.top = clamp(S.probe.sy - 40, 70, innerHeight - 380) + 'px'; }
   el.querySelector('.x').onclick = () => { el.hidden = true; S.probe = null; };
   el.querySelector('.add').onclick = () => {
-    const g = { k: 'u' + gaugePts.length, name: `Sensor ${gaugePts.length - GAUGES.length + 1} (${z.toFixed(0)} m)`, x, y }; gaugePts.push(g); series.gauges.push([]);
+    const g = { user: true, k: 'u' + gaugePts.length, name: `Sensor ${gaugePts.length - GAUGES.length + 1} (${z.toFixed(0)} m)`, x, y }; gaugePts.push(g); series.gauges.push([]);
     const b = document.createElement('button'); const iG = gaugePts.length - 1; b.innerHTML = `<span>${g.name}</span><i>—</i><small>sin flujo</small>`; b.onclick = () => { S.gaugeSel = iG; flyTo(g.x, g.y, 2.2, 0.9); updateUI(true); }; $('gauges').appendChild(b);
     labels.add(g.name, x, y, 'gauge', 2, 40); rebuildSampler(); S.gaugeSel = iG; toast('Sensor agregado: verás su hidrograma en el panel derecho');
   };

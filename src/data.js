@@ -173,24 +173,49 @@ let hydroCache = null;
 function hydro(D) {
   if (hydroCache) return hydroCache;
   const { nx, ny, N, dem, river } = D;
-  const down = new Int32Array(N).fill(-1), sl = new Float32Array(N);
   const dI = [1, 1, 0, -1, -1, -1, 0, 1], dJ = [0, 1, 1, 1, 0, -1, -1, -1];
+  // Relleno de depresiones con inundación por prioridad + épsilon (Barnes et al. 2014):
+  // las pequeñas depresiones del modelo de superficie no cortan la red de drenaje
+  const fz = Float32Array.from(dem), closed = new Uint8Array(N);
+  const hk = new Int32Array(N), hv = new Float32Array(N); let hn = 0;
+  const push = (k, v) => { let i = hn++; while (i > 0) { const p = (i - 1) >> 1; if (hv[p] <= v) break; hk[i] = hk[p]; hv[i] = hv[p]; i = p; } hk[i] = k; hv[i] = v; };
+  const pop = () => { const top = hk[0], k = hk[--hn], v = hv[hn]; let i = 0; for (;;) { let c = 2 * i + 1; if (c >= hn) break; if (c + 1 < hn && hv[c + 1] < hv[c]) c++; if (hv[c] >= v) break; hk[i] = hk[c]; hv[i] = hv[c]; i = c; } hk[i] = k; hv[i] = v; return top; };
+  for (let i = 0; i < nx; i++) for (const j of [0, ny - 1]) { const k = j * nx + i; closed[k] = 1; push(k, fz[k]); }
+  for (let j = 1; j < ny - 1; j++) for (const i of [0, nx - 1]) { const k = j * nx + i; closed[k] = 1; push(k, fz[k]); }
+  while (hn) {
+    const c = pop(), ci = c % nx, cj = (c / nx) | 0;
+    for (let q = 0; q < 8; q++) { const ii = ci + dI[q], jj = cj + dJ[q]; if (ii < 0 || jj < 0 || ii >= nx || jj >= ny) continue; const n = jj * nx + ii; if (closed[n]) continue;
+      closed[n] = 1; if (fz[n] <= fz[c]) fz[n] = fz[c] + 0.002; push(n, fz[n]); }
+  }
+  const down = new Int32Array(N).fill(-1), sl = new Float32Array(N);
   for (let j = 1; j < ny - 1; j++) for (let i = 1; i < nx - 1; i++) {
-    const k = j * nx + i; let best = 0, bk = -1;
-    for (let q = 0; q < 8; q++) { const kk = (j + dJ[q]) * nx + i + dI[q]; const s = (dem[k] - dem[kk]) / ((q & 1) ? 1.4142 : 1); if (s > best) { best = s; bk = kk; } }
-    down[k] = bk; sl[k] = best / D.cellM;
+    const k = j * nx + i; let best = 0, bk = -1, bq = 0;
+    for (let q = 0; q < 8; q++) { const kk = (j + dJ[q]) * nx + i + dI[q]; const s = (fz[k] - fz[kk]) / ((q & 1) ? 1.4142 : 1); if (s > best) { best = s; bk = kk; bq = q; } }
+    down[k] = bk; sl[k] = bk >= 0 ? Math.max(0, dem[k] - dem[bk]) / (D.cellM * ((bq & 1) ? 1.4142 : 1)) : 0;
   }
   const order = new Uint32Array(N); for (let k = 0; k < N; k++) order[k] = k;
-  order.sort((a, b) => dem[b] - dem[a]);
+  order.sort((a, b) => fz[b] - fz[a]);
   const cellKm2 = D.cellM * D.cellM / 1e6;
-  const full = new Float32Array(N).fill(cellKm2), lat = new Float32Array(N), pend = new Float32Array(N).fill(cellKm2);
+  const full = new Float32Array(N).fill(cellKm2);
+  for (let q = 0; q < N; q++) { const k = order[q], d = down[k]; if (d >= 0) full[d] += full[k]; }
+  // Red de cauces propia (consistente con el flujo): área drenada > 1,5 km².
+  // En cada paso diagonal se agrega la celda ortogonal más baja para que el cauce sea continuo en 4 vecinos.
+  const chan = new Uint8Array(N), main = new Uint8Array(N);
+  for (let k = 0; k < N; k++) if (full[k] >= 1.5) {
+    chan[k] = 1; main[k] = 1; const d = down[k]; if (d < 0) continue;
+    const ki = k % nx, kj = (k / nx) | 0, di = d % nx, dj = (d / nx) | 0;
+    if (ki !== di && kj !== dj) { const a = kj * nx + di, b = dj * nx + ki; chan[dem[a] < dem[b] ? a : b] = 1; }
+  }
+  const lat = new Float32Array(N), pend = new Float32Array(N).fill(cellKm2);
   for (let q = 0; q < N; q++) {
     const k = order[q], d = down[k];
-    if (d >= 0) full[d] += full[k];
-    if (river[k]) { lat[k] += pend[k]; }
+    if (chan[k]) lat[k] += pend[k];
     else if (d >= 0) pend[d] += pend[k];
   }
-  return (hydroCache = { full, lat, sl });
+  // las celdas intermedias de pasos diagonales heredan el área del cauce para el nivel inicial
+  for (let k = 0; k < N; k++) if (chan[k] && full[k] < 1.5) { let m = 0; const ki = k % nx, kj = (k / nx) | 0;
+    for (let q = 0; q < 8; q++) { const ii = ki + dI[q], jj = kj + dJ[q]; if (ii < 0 || jj < 0 || ii >= nx || jj >= ny) continue; const n = jj * nx + ii; if (full[n] >= 1.5) m = Math.max(m, full[n]); } full[k] = Math.max(full[k], m); }
+  return (hydroCache = { full, lat, sl, chan, main });
 }
 // Arreglo RGBA a la resolución del solver: (nivel inicial Manning, aporte lateral m/s, cauce, área drenada km²)
 export function riverBase(D, month, s) {
@@ -202,9 +227,9 @@ export function riverBase(D, month, s) {
     for (let b = 0; b < s; b++) for (let c = 0; c < s; c++) {
       const k = (j * s + b) * D.nx + i * s + c;
       lat += H.lat[k];
-      if (D.river[k]) {
+      if (H.chan[k]) {
         riv = 1; area = Math.max(area, H.full[k]);
-        const Q = H.full[k] * qs, S = Math.max(0.003, H.sl[k]);
+        const Q = H.full[k] * qs, S = Math.max(0.004, H.sl[k]);
         hmax = Math.max(hmax, Math.pow(Q * 0.035 / (w * Math.sqrt(S)), 0.6));
       }
     }
@@ -213,4 +238,5 @@ export function riverBase(D, month, s) {
   }
   return out;
 }
+export function channelAt(D, k) { return hydro(D).main[k]; }
 export function drainageAt(D, x, y) { const H = hydro(D); const i = Math.round((x - D.GR.X0) / D.GR.cell), j = Math.round((D.GR.Y1 - y) / D.GR.cell); return H.full[j * D.nx + i] || 0; }

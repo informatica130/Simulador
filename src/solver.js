@@ -175,7 +175,7 @@ void main(){
   float hm1 = hm + k * dh + uDt * (melt + runoff + wsrc + bs.g + erode - dep - infil);
   float sm1 = hm * cv + k * dsd + uDt * CSTAR * (erode - dep);
   float bedAdd = uDt * (dep - erode) - uDt * melt * 1.1;
-  if (hm1 < 2e-4) { bedAdd += max(sm1, 0.0) / CSTAR; hm1 = 0.0; sm1 = 0.0; }
+  if (hm1 < 2e-4 && bs.b < 0.5 && bs.g <= 0.0) { bedAdd += max(sm1, 0.0) / CSTAR; hm1 = 0.0; sm1 = 0.0; }
   float cv1 = hm1 > 1e-4 ? sm1 / hm1 : 0.0;
   if (cv1 > 0.6) { float ex = (cv1 - 0.6) * hm1; bedAdd += ex / CSTAR; hm1 -= ex / CSTAR; cv1 = 0.6; }
   cv1 = clamp(cv1, 0.0, 0.6);

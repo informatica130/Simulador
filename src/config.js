@@ -167,8 +167,8 @@ export const SCENARIOS = {
 
 // Sensores virtuales (km). Valores medidos en cada uno por el motor.
 export const GAUGES = [
-  { k: 'meli', name: 'Puente Allipén · Melipeuco', x: 2.93, y: -17.62 },
-  { k: 'truful', name: 'Truful-Truful · ruta S-61', x: 6.05, y: -13.45 },
+  { k: 'meli', name: 'Puente Allipén · Melipeuco', x: 3.21, y: -18.42 },
+  { k: 'truful', name: 'Puente Truful-Truful · S-51-R', x: 6.54, y: -15.84 },
   { k: 'cascada', name: 'Cascada Truful-Truful', x: 7.18, y: -10.75 },
   { k: 'capt', name: 'Río Captrén · R-925', x: -3.55, y: 11.0 },
   { k: 'calbuco', name: 'Río Calbuco · Los Paraguas', x: -11.0, y: -3.1 },

@@ -84,8 +84,11 @@ baja. Infiltración en suelo permeable, depósito de películas finas.
 
 ### Ríos con caudal real
 
-Direcciones de flujo D8 sobre el DEM, área drenada de cada celda y aporte lateral a cada celda de
-cauce. Escorrentía específica media de ~55 L/s/km² (Andes de La Araucanía) con régimen
+Relleno de depresiones por inundación con prioridad (Barnes et al. 2014), direcciones de flujo D8,
+área drenada de cada celda y red de cauces propia (> 1,5 km² drenados, continua en 4 vecinos);
+aporte lateral a cada celda de cauce. Resultado de referencia: Allipén en el puente de Melipeuco
+~800 km² drenados (≈57 m³/s en noviembre, ≈17 m³/s en febrero), Truful-Truful en la S-51-R
+~370 km². Escorrentía específica media de ~55 L/s/km² (Andes de La Araucanía) con régimen
 pluvio-nival mensual (máximos en invierno por lluvia y en primavera por deshielo, mínimos a fines
 del verano). Al iniciar se integra el motor sólo con los ríos hasta el **régimen permanente** y ese
 estado es la condición inicial. Así:
@@ -224,7 +227,7 @@ lib/              three.js r160 (MIT)
 
 ## Referencias
 
-Briggs (1975) plume rise · Bredemeyer & Hansteen (2014) ciclos de SO₂ en Llaima y Villarrica ·
+Briggs (1975) plume rise · Barnes, Lehman & Mulla (2014) priority-flood · Bredemeyer & Hansteen (2014) ciclos de SO₂ en Llaima y Villarrica ·
 Copernicus DEM GLO-30 (ESA/Airbus) · EOX Sentinel-2 cloudless 2024 ·
 Bates, Horritt & Fewtrell (2010) J. Hydrol. · de Almeida et al. (2012) Water Resour. Res. ·
 O'Brien & Julien (1988) J. Hydraul. Eng. · Takahashi (1978) J. Hydraul. Div. ·
