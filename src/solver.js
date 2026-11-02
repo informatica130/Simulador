@@ -103,13 +103,13 @@ void main(){
 
 // ----------------------------- actualización de estado ------------------
 const UPDATE = HDR + /* glsl */`
-uniform sampler2D tTerr, tFluid, tFluidP, tFluxA, tFluxB, tStatic, tStat, tAsh;
+uniform sampler2D tTerr, tFluid, tFluidP, tFluxA, tFluxB, tStatic, tStat, tAsh, tBase;
 uniform vec4 uVent[8]; uniform int uNV; uniform float uT0;
 uniform vec4 uPdc; uniform float uPdcT;
 uniform vec4 uWater[4]; uniform int uNW;
 uniform vec4 uSpat;
 uniform float uRain;
-uniform float uErode;
+uniform float uErode; uniform float uSpin;
 layout(location = 0) out vec4 oF;
 layout(location = 1) out vec4 oP;
 layout(location = 2) out vec4 oT;
@@ -117,7 +117,7 @@ layout(location = 3) out vec4 oS;
 float diskRate(vec4 v, ivec2 p){ vec2 d = vec2(p) - v.xy; return dot(d, d) <= v.z * v.z ? v.w : 0.0; }
 void main(){
   ivec2 p = P();
-  vec4 tr = F(tTerr, p), fl = F(tFluid, p), fp = F(tFluidP, p), st = F(tStatic, p), sa = F(tStat, p);
+  vec4 tr = F(tTerr, p), fl = F(tFluid, p), fp = F(tFluidP, p), st = F(tStatic, p), sa = F(tStat, p), bs = F(tBase, p);
   ivec2 eW = ivec2(1, 0), eN = ivec2(0, 1);
   vec4 qa = F(tFluxA, p), qaW = p.x > 0 ? F(tFluxA, p - eW) : vec4(0.0), qaN = p.y > 0 ? F(tFluxA, p - eN) : vec4(0.0);
   vec4 qb = F(tFluxB, p), qbW = p.x > 0 ? F(tFluxB, p - eW) : vec4(0.0), qbN = p.y > 0 ? F(tFluxB, p - eN) : vec4(0.0);
@@ -162,14 +162,17 @@ void main(){
   float cvEq = tanb >= 0.62 ? 0.6 : clamp(1000.0 * tanb / (1650.0 * (0.70 - tanb)), 0.0, 0.6);
   float erode = 0.0, dep = 0.0;
   float scour = st.x - tr.x;
-  if (hm > 0.05 && um > 0.5 && cv < cvEq && scour < 10.0 && swe < 1.0) erode = uErode * min(0.02, 0.0016 * um * (cvEq - cv));
+  // el lecho de los ríos está acorazado: sólo una crecida (exceso sobre el caudal base) moviliza sedimento
+  float exc0 = hm - bs.r;
+  if (uSpin < 0.5 && exc0 > 0.15 && hm > 0.05 && um > 0.5 && cv < cvEq && scour < 10.0 && swe < 1.0) erode = uErode * min(0.02, 0.0016 * um * (cvEq - cv));
+  if (uSpin > 0.5) cvEq = 1.0;
   if (hm > 0.02 && cv > cvEq) dep = 0.03 * (cv - cvEq) * hm / CSTAR;
   if (hm > 0.02 && um < 0.25) dep += 0.03 * cv * hm * (1.0 - um / 0.25) / CSTAR;
   dep = min(dep, 0.5 * cv * hm / (CSTAR * uDt));
   // infiltración en suelo volcánico permeable (no sobre hielo/nieve ni bajo lava)
-  float infil = (swe > 0.05 || fl.z > 0.02) ? 0.0 : 2.5e-6 * (1.0 - cv);
+  float infil = (swe > 0.05 || fl.z > 0.02 || bs.b > 0.5 || uSpin > 0.5) ? 0.0 : 2.5e-6 * (1.0 - cv);
   infil = min(infil, max(hm, 0.0) * (1.0 - cv) / uDt);
-  float hm1 = hm + k * dh + uDt * (melt + runoff + wsrc + erode - dep - infil);
+  float hm1 = hm + k * dh + uDt * (melt + runoff + wsrc + bs.g + erode - dep - infil);
   float sm1 = hm * cv + k * dsd + uDt * CSTAR * (erode - dep);
   float bedAdd = uDt * (dep - erode) - uDt * melt * 1.1;
   if (hm1 < 2e-4) { bedAdd += max(sm1, 0.0) / CSTAR; hm1 = 0.0; sm1 = 0.0; }
@@ -210,11 +213,13 @@ void main(){
   oF = vec4(max(hm1, 0.0), cv1, max(hl1, 0.0), T1);
   float arrP = fp.z; if (arrP == 0.0 && hp1 > 0.1) arrP = uT + 1.0;
   oP = vec4(max(hp1, 0.0), Tp, arrP, max(fp.w, hp1));
-  float dyn = hm1 > 0.1 ? rhoMud(cv1) * hm1 * um * um / 1000.0 : 0.0;
-  oT = vec4(tr.x + bedAdd, max(0.0, swe - uDt * melt), max(tr.z, hm1 > 0.1 ? um : 0.0), max(tr.w, dyn));
-  float aM = sa.y; if (aM == 0.0 && hm1 > 0.1) aM = uT + 1.0;
+  // lahar = exceso de nivel sobre el caudal base del río (o cualquier flujo fuera del cauce)
+  float exc = hm1 - bs.r * 1.08 - 0.03;
+  float dyn = exc > 0.1 ? rhoMud(cv1) * hm1 * um * um / 1000.0 : 0.0;
+  oT = vec4(tr.x + bedAdd, max(0.0, swe - uDt * melt), max(tr.z, exc > 0.1 ? um : 0.0), max(tr.w, dyn));
+  float aM = sa.y; if (aM == 0.0 && exc > 0.12 && uSpin < 0.5) aM = uT + 1.0;
   float aL = sa.w; if (aL == 0.0 && hl1 > 0.1) aL = uT + 1.0;
-  oS = vec4(max(sa.x, hm1), aM, max(sa.z, hl1), aL);
+  oS = vec4(uSpin > 0.5 ? 0.0 : max(sa.x, max(exc, 0.0)), aM, max(sa.z, hl1), aL);
 }`;
 
 // ----------------------------- incendios --------------------------------
@@ -269,7 +274,7 @@ void main(){
 
 // ----------------------------- resumen por bloques 8×8 ------------------
 const SUMMARY = HDR + /* glsl */`
-uniform sampler2D tTerr, tFluid, tFluidP, tFluxA, tFluxB, tStatic, tStat, tFire;
+uniform sampler2D tTerr, tFluid, tFluidP, tFluxA, tFluxB, tStatic, tStat, tFire, tBase;
 uniform int uBW;
 out vec4 o;
 void main(){
@@ -278,20 +283,21 @@ void main(){
   for (int j = 0; j < 8; j++) for (int i = 0; i < 8; i++) {
     ivec2 p = b + ivec2(i, j); if (!inside(p)) continue;
     vec4 fl = F(tFluid, p), fp = F(tFluidP, p);
-    if (tile == 0) r += vec4(fl.x, fl.x * fl.y, fl.z, fp.x);
+    float ex = max(0.0, fl.x - F(tBase, p).r * 1.08 - 0.03);
+    if (tile == 0) r += vec4(ex, fl.x * fl.y, fl.z, fp.x);
     else if (tile == 1) { vec4 tr = F(tTerr, p); r.x = max(r.x, fl.x); if (fl.z > 0.05) r.y = max(r.y, fl.w); r.z = max(r.z, fp.x); r.w += (fl.z > 0.05 && tr.y > 0.05) ? 1.0 : 0.0; }
     else if (tile == 2) {
       vec4 qa = F(tFluxA, p), qaW = F(tFluxA, p - ivec2(1, 0)), qaN = F(tFluxA, p - ivec2(0, 1));
       vec4 qb = F(tFluxB, p), qbW = F(tFluxB, p - ivec2(1, 0)), qbN = F(tFluxB, p - ivec2(0, 1));
       vec2 vm = vec2(0.5 * (qaW.x + qa.x), 0.5 * (qaN.y + qa.y));
       vec2 vp = vec2(0.5 * (qbW.x + qb.x), 0.5 * (qbN.y + qb.y));
-      r += vec4(F(tFire, p).y, vp.x, vp.y, length(vm));
+      r.xyz += vec3(F(tFire, p).y, vp.x, vp.y); r.w = max(r.w, ex);
     } else {
       vec4 tr = F(tTerr, p), s0 = F(tStatic, p), sa = F(tStat, p);
       float d = tr.x - s0.x;
       r.x += max(0.0, s0.y - tr.y);
       if (sa.z >= 0.3) r.z += max(0.0, d); else r.y += max(0.0, d);
-      if (fl.x > 0.1) { vec4 qa = F(tFluxA, p), qaW = F(tFluxA, p - ivec2(1, 0)), qaN = F(tFluxA, p - ivec2(0, 1));
+      if (ex > 0.1) { vec4 qa = F(tFluxA, p), qaW = F(tFluxA, p - ivec2(1, 0)), qaN = F(tFluxA, p - ivec2(0, 1));
         r.w = max(r.w, length(vec2(0.5 * (qaW.x + qa.x), 0.5 * (qaN.y + qa.y))) / fl.x); }
     }
   }
@@ -300,12 +306,12 @@ void main(){
 
 // ----------------------------- muestreo de puntos -----------------------
 const SAMPLE = HDR + /* glsl */`
-uniform sampler2D tPts, t0, t1, t2, t3, t4, t5;
+uniform sampler2D tPts, t0, t1, t2, t3, t4, t5, t6;
 out vec4 o;
 void main(){
   ivec2 q = P(); ivec2 c = ivec2(texelFetch(tPts, ivec2(q.x, 0), 0).xy);
   if (q.y == 0) o = F(t0, c); else if (q.y == 1) o = F(t1, c); else if (q.y == 2) o = F(t2, c);
-  else if (q.y == 3) o = F(t3, c); else if (q.y == 4) o = F(t4, c); else o = F(t5, c);
+  else if (q.y == 3) o = F(t3, c); else if (q.y == 4) o = F(t4, c); else if (q.y == 5) o = F(t5, c); else o = F(t6, c);
 }`;
 
 // ----------------------------- acumulación del ensamble -----------------
@@ -318,12 +324,18 @@ void main(){
 }`;
 
 const INIT = HDR + /* glsl */`
-uniform sampler2D tStatic; uniform int uMode;
+uniform sampler2D tStatic, tSnapF, tBaseSrc; uniform int uMode;
 layout(location = 0) out vec4 o0; layout(location = 1) out vec4 o1; layout(location = 2) out vec4 o2; layout(location = 3) out vec4 o3;
 void main(){
   vec4 s = F(tStatic, P());
-  o0 = vec4(0.0); o1 = vec4(0.0); o2 = vec4(s.x, s.y, 0.0, 0.0); o3 = vec4(0.0);
+  // uMode 0: ríos con profundidad normal de Manning; 1: estado estacionario guardado
+  o0 = uMode == 1 ? vec4(F(tSnapF, P()).x, 0.0, 0.0, 0.0) : vec4(F(tBaseSrc, P()).r, 0.0, 0.0, 0.0);
+  o1 = vec4(0.0); o2 = vec4(s.x, s.y, 0.0, 0.0); o3 = vec4(0.0);
 }`;
+const COPY = HDR + /* glsl */`uniform sampler2D tSrc; out vec4 o; void main(){ o = F(tSrc, P()); }`;
+const MKBASE = HDR + /* glsl */`uniform sampler2D tFl, tBaseSrc; out vec4 o; void main(){ vec4 b = F(tBaseSrc, P()); o = vec4(F(tFl, P()).x, b.g, b.b, b.a); }`;
+const RESTF = HDR + /* glsl */`uniform sampler2D tSnapQ; uniform int uMode; layout(location = 0) out vec4 o0; layout(location = 1) out vec4 o1;
+void main(){ o0 = uMode == 1 ? F(tSnapQ, P()) : vec4(0.0); o1 = vec4(0.0); }`;
 const INITFIRE = HDR + /* glsl */`uniform sampler2D tStatic; out vec4 o; void main(){ vec4 s = F(tStatic, P()); o = vec4(s.z, 0.0, 0.0, 0.0); }`;
 const CLEAR = HDR + /* glsl */`layout(location = 0) out vec4 o0; layout(location = 1) out vec4 o1; void main(){ o0 = vec4(0.0); o1 = vec4(0.0); }`;
 const CLEAR1 = HDR + /* glsl */`out vec4 o; void main(){ o = vec4(0.0); }`;
@@ -354,22 +366,31 @@ export class Solver {
     // texturas estáticas
     this.staticTex = new THREE.DataTexture(new Float32Array(this.n * 4), W, H, THREE.RGBAFormat, THREE.FloatType);
     this.staticTex.minFilter = this.staticTex.magFilter = THREE.NearestFilter;
+    // caudal base de los ríos: fuente (nivel inicial, aporte lateral, cauce, área drenada) y estado estacionario
+    this.baseSrc = new THREE.DataTexture(new Float32Array(this.n * 4), W, H, THREE.RGBAFormat, THREE.FloatType);
+    this.baseSrc.minFilter = this.baseSrc.magFilter = THREE.NearestFilter; this.baseSrc.needsUpdate = true;
+    this.baseRT = new THREE.WebGLRenderTarget(W, H, opt);
+    this.snapF = new THREE.WebGLRenderTarget(W, H, opt); this.snapQ = new THREE.WebGLRenderTarget(W, H, opt);
+    this.hasSnap = false; this.baseMonth = -1;
     // materiales
     const mk = (fs, uniforms) => new THREE.RawShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: VS, fragmentShader: fs, uniforms: { uN: { value: new THREE.Vector2(W, H) }, uDx: { value: this.dx }, uDt: { value: 1 }, uT: { value: 0 }, ...uniforms }, depthTest: false, depthWrite: false, blending: THREE.NoBlending });
     const T = () => ({ value: null });
     this.mFlux = mk(FLUX, { tTerr: T(), tFluid: T(), tFluidP: T(), tFluxA: T(), tFluxB: T(), uPdcMu: { value: 0.12 }, uPdcXi: { value: 900 } });
     const v8 = []; for (let i = 0; i < 8; i++) v8.push(new THREE.Vector4());
     const v4 = []; for (let i = 0; i < 4; i++) v4.push(new THREE.Vector4());
-    this.mUpd = mk(UPDATE, { tTerr: T(), tFluid: T(), tFluidP: T(), tFluxA: T(), tFluxB: T(), tStatic: { value: this.staticTex }, tStat: T(), tAsh: T(),
+    this.mUpd = mk(UPDATE, { tTerr: T(), tFluid: T(), tFluidP: T(), tFluxA: T(), tFluxB: T(), tStatic: { value: this.staticTex }, tStat: T(), tAsh: T(), tBase: { value: this.baseRT.texture }, uSpin: { value: 0 },
       uVent: { value: v8 }, uNV: { value: 0 }, uT0: { value: 1420 }, uPdc: { value: new THREE.Vector4() }, uPdcT: { value: 800 },
       uWater: { value: v4 }, uNW: { value: 0 }, uSpat: { value: new THREE.Vector4(0, 0, 1, 0) }, uRain: { value: 0 }, uErode: { value: 1 } });
     this.mFire = mk(FIRE, { tFire: T(), tFluid: T(), tFluidP: T(), tTerr: T(), tStatic: { value: this.staticTex }, uWindDir: { value: new THREE.Vector2(1, 0) }, uDry: { value: 0.5 }, uSpread: { value: 1 / 150 }, uRain: { value: 0 }, uStep: { value: 0 } });
     const k64 = []; for (let i = 0; i < 64; i++) k64.push(new THREE.Vector4());
     this.mAsh = mk(ASH, { tAsh: T(), uK: { value: k64 }, uKc: { value: new Float32Array(64) }, uNK: { value: 0 } });
-    this.mSum = mk(SUMMARY, { tTerr: T(), tFluid: T(), tFluidP: T(), tFluxA: T(), tFluxB: T(), tStatic: { value: this.staticTex }, tStat: T(), tFire: T(), uBW: { value: this.bw } });
-    this.mSample = mk(SAMPLE, { tPts: T(), t0: T(), t1: T(), t2: T(), t3: T(), t4: T(), t5: T() });
+    this.mSum = mk(SUMMARY, { tTerr: T(), tFluid: T(), tFluidP: T(), tFluxA: T(), tFluxB: T(), tStatic: { value: this.staticTex }, tStat: T(), tFire: T(), tBase: { value: this.baseRT.texture }, uBW: { value: this.bw } });
+    this.mSample = mk(SAMPLE, { tPts: T(), t0: T(), t1: T(), t2: T(), t3: T(), t4: T(), t5: T(), t6: T() });
     this.mAccum = mk(ACCUM, { tAcc: T(), tStat: T(), tFluidP: T(), tAsh: T(), tTerr: T(), tStatic: { value: this.staticTex } });
-    this.mInit = mk(INIT, { tStatic: { value: this.staticTex }, uMode: { value: 0 } });
+    this.mInit = mk(INIT, { tStatic: { value: this.staticTex }, uMode: { value: 0 }, tSnapF: { value: this.snapF.texture }, tBaseSrc: { value: this.baseSrc } });
+    this.mCopy = mk(COPY, { tSrc: T() });
+    this.mMkBase = mk(MKBASE, { tFl: T(), tBaseSrc: { value: this.baseSrc } });
+    this.mRestF = mk(RESTF, { tSnapQ: { value: this.snapQ.texture }, uMode: { value: 0 } });
     this.mInitFire = mk(INITFIRE, { tStatic: { value: this.staticTex } });
     this.mClear2 = mk(CLEAR, {}); this.mClear1 = mk(CLEAR1, {});
     this.samplers = new Map();
@@ -393,10 +414,31 @@ export class Solver {
   get FX() { return this.mrtF[this.cf].texture; }   // [fluxA, fluxB]
   get fireTex() { return this.fire[this.cfi].texture; }
   get ashTex() { return this.ash[this.ca].texture; }
+  get baseTex() { return this.baseRT.texture; }
+  // Caudal base (arreglo RGBA a resolución del solver): nivel inicial, aporte lateral (m/s), cauce, área (km²)
+  setBase(arr) {
+    this.baseSrc.image.data.set(arr); this.baseSrc.needsUpdate = true; this.hasSnap = false;
+    const m = this.mMkBase.uniforms; m.tFl.value = this.baseSrc; this.pass(this.mMkBase, this.baseRT);
+  }
+  // Integra sólo los ríos hasta el estado estacionario y lo guarda como condición inicial
+  spinUp(seconds) {
+    const prev = this.r.getRenderTarget();
+    this.hasSnap = false; this.reset();
+    this.setSources({});
+    this.mUpd.uniforms.uSpin.value = 1;
+    const dt = Math.min(4, 2.6 * this.s); let t = 0;
+    while (t < seconds) { this.step(dt, t); t += dt; }
+    this.mCopy.uniforms.tSrc.value = this.U[0]; this.pass(this.mCopy, this.snapF);
+    this.mCopy.uniforms.tSrc.value = this.FX[0]; this.pass(this.mCopy, this.snapQ);
+    this.mMkBase.uniforms.tFl.value = this.U[0]; this.pass(this.mMkBase, this.baseRT);
+    this.mUpd.uniforms.uSpin.value = 0; this.hasSnap = true;
+    this.r.setRenderTarget(prev);
+  }
   reset() {
     const prev = this.r.getRenderTarget();
+    this.mInit.uniforms.uMode.value = this.hasSnap ? 1 : 0; this.mRestF.uniforms.uMode.value = this.hasSnap ? 1 : 0;
     for (const m of this.mrtU) this.pass(this.mInit, m);
-    for (const m of this.mrtF) this.pass(this.mClear2, m);
+    for (const m of this.mrtF) this.pass(this.mRestF, m);
     for (const f of this.fire) this.pass(this.mInitFire, f);
     for (const a of this.ash) this.pass(this.mClear1, a);
     this.cu = this.cf = this.cfi = this.ca = 0; this.stepN = 0; this.t = 0;
@@ -470,20 +512,20 @@ export class Solver {
     const W = Math.max(1, pts.length), data = new Float32Array(W * 4);
     pts.forEach((p, i) => { const [ci, cj] = this.cell(p.x, p.y); data[i * 4] = Math.round(Math.max(0, Math.min(this.nx - 1, ci))); data[i * 4 + 1] = Math.round(Math.max(0, Math.min(this.ny - 1, cj))); });
     const tex = new THREE.DataTexture(data, W, 1, THREE.RGBAFormat, THREE.FloatType); tex.needsUpdate = true;
-    const rt = new THREE.WebGLRenderTarget(W, 6, { type: THREE.FloatType, format: THREE.RGBAFormat, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false });
-    const s = { tex, rt, W, buf: new Float32Array(W * 6 * 4), pts };
+    const rt = new THREE.WebGLRenderTarget(W, 7, { type: THREE.FloatType, format: THREE.RGBAFormat, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false });
+    const s = { tex, rt, W, buf: new Float32Array(W * 7 * 4), pts };
     const old = this.samplers.get(name); if (old) { old.tex.dispose(); old.rt.dispose(); }
     this.samplers.set(name, s); return s;
   }
   sample(name, accTex) {
     const s = this.samplers.get(name); if (!s) return null;
     const U = this.U, m = this.mSample.uniforms;
-    m.tPts.value = s.tex; m.t0.value = U[3]; m.t1.value = U[0]; m.t2.value = U[1]; m.t3.value = this.ashTex; m.t4.value = U[2]; m.t5.value = accTex || this.fireTex;
+    m.tPts.value = s.tex; m.t0.value = U[3]; m.t1.value = U[0]; m.t2.value = U[1]; m.t3.value = this.ashTex; m.t4.value = U[2]; m.t5.value = accTex || this.fireTex; m.t6.value = this.baseTex;
     m.uN.value.set(this.nx, this.ny);
     this.pass(this.mSample, s.rt);
-    this.r.readRenderTargetPixels(s.rt, 0, 0, s.W, 6, s.buf);
+    this.r.readRenderTargetPixels(s.rt, 0, 0, s.W, 7, s.buf);
     const W = s.W, b = s.buf, row = (r, i) => [b[(r * W + i) * 4], b[(r * W + i) * 4 + 1], b[(r * W + i) * 4 + 2], b[(r * W + i) * 4 + 3]];
-    return s.pts.map((p, i) => ({ stat: row(0, i), fluid: row(1, i), fluidP: row(2, i), ash: row(3, i), terr: row(4, i), fire: row(5, i) }));
+    return s.pts.map((p, i) => ({ stat: row(0, i), fluid: row(1, i), fluidP: row(2, i), ash: row(3, i), terr: row(4, i), fire: row(5, i), base: row(6, i) }));
   }
   accumulate(accRT) {
     const U = this.U, m = this.mAccum.uniforms;
@@ -491,7 +533,7 @@ export class Solver {
     this.pass(this.mAccum, accRT[1]); accRT.reverse();
   }
   dispose() {
-    for (const m of [...this.mrtU, ...this.mrtF, ...this.fire, ...this.ash, this.sumRT]) m.dispose();
+    for (const m of [...this.mrtU, ...this.mrtF, ...this.fire, ...this.ash, this.sumRT, this.baseRT, this.snapF, this.snapQ]) m.dispose();
     this.staticTex.dispose();
     for (const s of this.samplers.values()) { s.tex.dispose(); s.rt.dispose(); }
   }

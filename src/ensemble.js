@@ -53,7 +53,7 @@ export class Ensemble {
   constructor(renderer, D, hAt) {
     this.r = renderer; this.D = D; this.hAt = hAt;
     this.sol = new Solver(renderer, D, { scale: 2 });
-    this.run = new Runner(this.sol, D);
+    this.run = new Runner(this.sol, D, { base: false });
     const opt = { type: THREE.FloatType, format: THREE.RGBAFormat, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false };
     this.acc = [new THREE.WebGLRenderTarget(this.sol.nx, this.sol.ny, opt), new THREE.WebGLRenderTarget(this.sol.nx, this.sol.ny, opt)];
     this.active = false; this.done = 0; this.N = 0; this.members = [];

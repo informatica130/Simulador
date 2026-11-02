@@ -3,15 +3,23 @@
 //  Bates et al. 2010), fuentes dependientes del tiempo, tefra
 //  incremental, lectura de resúmenes y series de tiempo.
 // =====================================================================
-import { snowSWE } from './data.js';
+import { snowSWE, riverBase } from './data.js';
 import { FIRE_DRY } from './config.js';
 
 export class Runner {
-  constructor(solver, D) { this.sol = solver; this.D = D; this.t = 0; this.dt = 1; this.series = []; this.sum = null; }
+  constructor(solver, D, opt = {}) { this.sol = solver; this.D = D; this.useBase = opt.base !== false; this.spinHours = opt.spinHours ?? 1.5; this.t = 0; this.dt = 1; this.series = []; this.sum = null; }
   start(src, cfg) {
     this.src = src; this.cfg = cfg;
     const swe = snowSWE(this.D, cfg.month);
-    this.sol.setStatic(swe); this.sol.reset();
+    this.sol.setStatic(swe);
+    // ríos en régimen permanente para el mes elegido (se calcula una vez por mes)
+    if (this.useBase && this.sol.baseMonth !== cfg.month) {
+      if (cfg.onSpin) cfg.onSpin();
+      this.sol.setBase(riverBase(this.D, cfg.month, this.sol.s));
+      this.sol.spinUp(this.spinHours * 3600);
+      this.sol.baseMonth = cfg.month;
+    }
+    this.sol.reset();
     this.sol.setFire({ dry: FIRE_DRY[cfg.month] * (cfg.rain > 0 ? 0.2 : 1), windTo: src.wind.to });
     this.sol.mFlux.uniforms.uPdcMu.value = cfg.pdcMu || 0.12;
     this.sol.mUpd.uniforms.uErode.value = cfg.erode ?? 1;
@@ -68,14 +76,14 @@ export class Runner {
   readSummary(wantSpots = false) {
     const { buf, bw, bh } = this.sol.summary();
     const A = this.sol.dx * this.sol.dx;
-    let sH = 0, sS = 0, sL = 0, sP = 0, mH = 0, mT = 0, mP = 0, cont = 0, burn = 0, mom = 0, melt = 0, dM = 0, dL = 0, mU = 0, pU = 0;
+    let mEx = 0, sH = 0, sS = 0, sL = 0, sP = 0, mH = 0, mT = 0, mP = 0, cont = 0, burn = 0, mom = 0, melt = 0, dM = 0, dL = 0, mU = 0, pU = 0;
     const spots = wantSpots ? { lavaSnow: [], pdc: [], fire: [], mud: [], lava: [], hot: [] } : null;
     const W = bw * 4, ck = this.sol.cellKm * 8;
     for (let j = 0; j < bh; j++) for (let i = 0; i < bw; i++) {
       const o0 = (j * W + i) * 4, o1 = (j * W + bw + i) * 4, o2 = (j * W + 2 * bw + i) * 4, o3 = (j * W + 3 * bw + i) * 4;
       sH += buf[o0]; sS += buf[o0 + 1]; sL += buf[o0 + 2]; sP += buf[o0 + 3];
       mH = Math.max(mH, buf[o1]); mT = Math.max(mT, buf[o1 + 1]); mP = Math.max(mP, buf[o1 + 2]); cont += buf[o1 + 3];
-      burn += buf[o2]; mom += Math.hypot(buf[o2 + 1], buf[o2 + 2]);
+      burn += buf[o2]; mom += Math.hypot(buf[o2 + 1], buf[o2 + 2]); mEx = Math.max(mEx, buf[o2 + 3]);
       melt += buf[o3]; dM += buf[o3 + 1]; dL += buf[o3 + 2]; mU = Math.max(mU, buf[o3 + 3]);
       if (buf[o0 + 3] > 0.05) pU = Math.max(pU, Math.hypot(buf[o2 + 1], buf[o2 + 2]) / buf[o0 + 3]);
       if (spots) {
@@ -89,14 +97,14 @@ export class Runner {
     }
     // paso de tiempo: CFL con la onda de gravedad y la advección
     const c = Math.sqrt(9.81 * Math.max(mH, mP, 0.5)) + Math.max(mU, pU * 1.5);
-    const mud = sH * A > 50, pdc = sP * A > 50, lava = sL * A > 10;
+    const mud = sH * A > 200 || sS * A > 50, pdc = sP * A > 50, lava = sL * A > 10;
     let dt = 0.55 * this.sol.dx / c;
     dt = Math.min(dt, mud ? 2.0 : lava ? 5 : 6, pdc ? 0.4 : 99);
     this.dt = Math.max(0.12, dt);
     this.limits = { h: mH, u: mU, hp: mP, up: pU, mud, pdc, lava };
     const T = this.totals;
     T.lahar = sH * A; T.sed = sS * A; T.lava = sL * A; T.pdc = sP * A; T.melt = melt * A; T.depMud = dM * A; T.depLava = dL * A;
-    T.burning = burn * A / 1e6; T.maxT = mT; T.maxH = mH; T.maxU = mU; T.ash = this.ashMass; T.lavaErupted = this.src.cumLavaVol(this.t) / 0.85;
+    T.burning = burn * A / 1e6; T.maxT = mT; T.maxH = mEx; T.maxU = mU; T.ash = this.ashMass; T.lavaErupted = this.src.cumLavaVol(this.t) / 0.85;
     if (spots) {
       spots.hot.sort((a, b) => b.w - a.w);
       const sel = []; for (const h of spots.hot) { if (sel.every(s => Math.hypot(s.x - h.x, s.y - h.y) > 1.2)) sel.push(h); if (sel.length >= 5) break; }

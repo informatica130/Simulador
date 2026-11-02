@@ -10,16 +10,16 @@
 import * as THREE from 'three';
 import { atm, windAt, plumeLookup } from './plume.js';
 
-const SMOKE = 0, ASHF = 1, STEAM = 2, PDC = 3, FSMOKE = 4, DUST = 5, SPRAY = 6;
+const SMOKE = 0, ASHF = 1, STEAM = 2, PDC = 3, FSMOKE = 4, DUST = 5, SPRAY = 6, FUM = 7, GAS = 8;
 const SPARK = 0, BOMB = 1, FLAME = 2, EMBER = 3;
 
 const PVS = /* glsl */`
 precision highp float;
-attribute vec3 iPos; attribute vec4 iCol; attribute vec2 iSR; attribute float iGlow;
-varying vec2 vUv; varying vec4 vCol; varying float vGlow; varying vec3 vWp; varying float vSeed;
+attribute vec3 iPos; attribute vec4 iCol; attribute vec2 iSR; attribute float iGlow; attribute vec2 iMisc;
+varying vec2 vUv; varying vec4 vCol; varying float vGlow; varying vec3 vWp; varying float vSeed; varying float vAge; varying float vShade; varying vec3 vView;
 void main(){
-  vUv = position.xy * 0.5 + 0.5; vCol = iCol; vGlow = iGlow; vWp = iPos; vSeed = iSR.y;
-  vec4 mv = modelViewMatrix * vec4(iPos, 1.0);
+  vUv = position.xy * 0.5 + 0.5; vCol = iCol; vGlow = iGlow; vWp = iPos; vSeed = iSR.y; vAge = iMisc.x; vShade = iMisc.y;
+  vec4 mv = modelViewMatrix * vec4(iPos, 1.0); vView = mv.xyz;
   float c = cos(iSR.y * 6.283), s = sin(iSR.y * 6.283);
   vec2 q = mat2(c, -s, s, c) * position.xy;
   mv.xy += q * iSR.x;
@@ -27,19 +27,33 @@ void main(){
 }`;
 const SMOKE_FS = /* glsl */`
 precision highp float;
-varying vec2 vUv; varying vec4 vCol; varying float vGlow; varying vec3 vWp; varying float vSeed;
-uniform vec3 uSunV; uniform vec3 uSunCol; uniform vec3 uSkyCol; uniform vec3 uFogCol; uniform float uFogD; uniform vec3 uCamPos; uniform float uAshHaze;
+varying vec2 vUv; varying vec4 vCol; varying float vGlow; varying vec3 vWp; varying float vSeed; varying float vAge; varying float vShade; varying vec3 vView;
+uniform vec3 uSunV; uniform vec3 uSunCol; uniform vec3 uSkyCol; uniform vec3 uFogCol; uniform float uFogD; uniform vec3 uCamPos; uniform float uAshHaze; uniform float uTime;
 float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
+float fbm3(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { s += a * vn(p); p = p * 2.03 + vec2(17.1, 9.3); a *= 0.5; } return s; }
 void main(){
   vec2 p = vUv * 2.0 - 1.0; float r = length(p);
   if (r > 1.0) discard;
-  float n = vn(vUv * 4.0 + vSeed * 31.0) * 0.6 + vn(vUv * 9.0 - vSeed * 17.0) * 0.4;
-  float dens = smoothstep(1.0, 0.15, r + (n - 0.5) * 0.55);
-  if (dens <= 0.01) discard;
-  vec3 nrm = normalize(vec3(p * 0.9, sqrt(max(0.0, 1.0 - r * r)) + 0.3));
-  float lam = 0.5 + 0.5 * dot(nrm, uSunV);
-  vec3 c = vCol.rgb * (uSunCol * lam * 0.42 + uSkyCol * 0.9 + 0.02);
+  // turbulencia que evoluciona en el tiempo (deformación de dominio)
+  float t = uTime * 0.035 + vSeed * 10.0;
+  vec2 q = vUv * 2.6 + vSeed * 31.0;
+  vec2 w = vec2(fbm3(q + t), fbm3(q - t + 5.2));
+  float n = fbm3(q * 1.5 + w * 1.7 + t * 0.4);
+  float base = 1.0 - smoothstep(0.3, 1.0, r);
+  // erosión con la edad: los bordes se deshacen en jirones
+  float er = mix(0.05, 0.5, vAge * vAge);
+  float dens = smoothstep(er, er + 0.35, base * (0.5 + 0.95 * n) - 0.12);
+  if (dens < 0.01) discard;
+  // iluminación volumétrica aproximada: normal de esfera perturbada, autosombra y
+  // dispersión de Mie hacia adelante (Henyey-Greenstein): bordes plateados a contraluz
+  vec3 nrm = normalize(vec3(p * 0.9 + (w - 0.5) * 0.7, sqrt(max(0.0, 1.0 - r * r)) + 0.25));
+  float lam = 0.42 + 0.58 * max(dot(nrm, uSunV), 0.0);
+  float mu = dot(normalize(vView), uSunV);
+  float g = 0.62, hg = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5) * 0.075;
+  float thick = dens * vCol.a;
+  vec3 sunL = uSunCol * (lam * 0.40 + hg * (1.15 - thick) * 1.4) * vShade;
+  vec3 c = vCol.rgb * (sunL + uSkyCol * (0.80 + 0.2 * nrm.y) + 0.012);
   c += vec3(1.0, 0.35, 0.08) * vGlow * (1.0 - 0.5 * r);
   float d = length(vWp - uCamPos);
   c = mix(c, uFogCol, clamp(1.0 - exp(-d * uFogD), 0.0, 1.0));
@@ -59,7 +73,7 @@ class Pool {
     this.n = n; this.count = 0;
     this.p = new Float32Array(n * 3); this.v = new Float32Array(n * 3);
     this.age = new Float32Array(n); this.life = new Float32Array(n); this.s0 = new Float32Array(n); this.s1 = new Float32Array(n);
-    this.type = new Uint8Array(n); this.col = new Float32Array(n * 4); this.seed = new Float32Array(n); this.glow = new Float32Array(n); this.drag = new Float32Array(n);
+    this.type = new Uint8Array(n); this.col = new Float32Array(n * 4); this.seed = new Float32Array(n); this.glow = new Float32Array(n); this.drag = new Float32Array(n); this.shade = new Float32Array(n).fill(1);
     const g = new THREE.InstancedBufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], 3));
     g.setIndex([0, 1, 2, 0, 2, 3]);
@@ -67,9 +81,10 @@ class Pool {
     this.aCol = new THREE.InstancedBufferAttribute(new Float32Array(n * 4), 4).setUsage(THREE.DynamicDrawUsage);
     this.aSR = new THREE.InstancedBufferAttribute(new Float32Array(n * 2), 2).setUsage(THREE.DynamicDrawUsage);
     this.aGlow = new THREE.InstancedBufferAttribute(new Float32Array(n), 1).setUsage(THREE.DynamicDrawUsage);
-    g.setAttribute('iPos', this.aPos); g.setAttribute('iCol', this.aCol); g.setAttribute('iSR', this.aSR); g.setAttribute('iGlow', this.aGlow);
+    this.aMisc = new THREE.InstancedBufferAttribute(new Float32Array(n * 2), 2).setUsage(THREE.DynamicDrawUsage);
+    g.setAttribute('iPos', this.aPos); g.setAttribute('iCol', this.aCol); g.setAttribute('iSR', this.aSR); g.setAttribute('iGlow', this.aGlow); g.setAttribute('iMisc', this.aMisc);
     g.instanceCount = 0;
-    this.uniforms = { uSunV: { value: new THREE.Vector3(0, 0, 1) }, uSunCol: { value: new THREE.Color() }, uSkyCol: { value: new THREE.Color() }, uFogCol: { value: new THREE.Color() }, uFogD: { value: 0.006 }, uCamPos: { value: new THREE.Vector3() }, uAshHaze: { value: 0 } };
+    this.uniforms = { uSunV: { value: new THREE.Vector3(0, 0, 1) }, uSunCol: { value: new THREE.Color() }, uSkyCol: { value: new THREE.Color() }, uFogCol: { value: new THREE.Color() }, uFogD: { value: 0.006 }, uCamPos: { value: new THREE.Vector3() }, uAshHaze: { value: 0 }, uTime: { value: 0 } };
     this.mat = new THREE.ShaderMaterial({ vertexShader: PVS, fragmentShader: fs, uniforms: this.uniforms, transparent: true, depthWrite: false, blending });
     this.mesh = new THREE.Mesh(g, this.mat); this.mesh.frustumCulled = false; this.g = g;
     scene.add(this.mesh);
@@ -80,14 +95,14 @@ class Pool {
     const i = this.count++;
     this.p[i * 3] = x; this.p[i * 3 + 1] = y; this.p[i * 3 + 2] = z; this.v[i * 3] = vx; this.v[i * 3 + 1] = vy; this.v[i * 3 + 2] = vz;
     this.age[i] = 0; this.life[i] = life; this.s0[i] = s0; this.s1[i] = s1; this.type[i] = type;
-    this.col[i * 4] = r; this.col[i * 4 + 1] = gg; this.col[i * 4 + 2] = b; this.col[i * 4 + 3] = a; this.seed[i] = Math.random(); this.glow[i] = glow; this.drag[i] = drag;
+    this.col[i * 4] = r; this.col[i * 4 + 1] = gg; this.col[i * 4 + 2] = b; this.col[i * 4 + 3] = a; this.seed[i] = Math.random(); this.glow[i] = glow; this.drag[i] = drag; this.shade[i] = 1;
     return i;
   }
   kill(i) {
     const j = --this.count; if (i === j) return;
     for (let k = 0; k < 3; k++) { this.p[i * 3 + k] = this.p[j * 3 + k]; this.v[i * 3 + k] = this.v[j * 3 + k]; }
     for (let k = 0; k < 4; k++) this.col[i * 4 + k] = this.col[j * 4 + k];
-    this.age[i] = this.age[j]; this.life[i] = this.life[j]; this.s0[i] = this.s0[j]; this.s1[i] = this.s1[j]; this.type[i] = this.type[j]; this.seed[i] = this.seed[j]; this.glow[i] = this.glow[j]; this.drag[i] = this.drag[j];
+    this.age[i] = this.age[j]; this.life[i] = this.life[j]; this.s0[i] = this.s0[j]; this.s1[i] = this.s1[j]; this.type[i] = this.type[j]; this.seed[i] = this.seed[j]; this.glow[i] = this.glow[j]; this.drag[i] = this.drag[j]; this.shade[i] = this.shade[j];
   }
 }
 
@@ -106,7 +121,9 @@ export class FX {
     this.bolt.frustumCulled = false; scene.add(this.bolt);
     this.boltLife = 0; this.flash = null; this.pulseT = 0; this.boom = 0;
     this.spots = { lavaSnow: [], pdc: [], fire: [], mud: [], lava: [] };
-    this.fumaroles = [[0.05, 0.1], [-0.15, -0.05], [0.12, -0.12], [0.36, -1.08], [0.0, 0.18]];
+    // Bocas de desgasificación: conos anidados en el cráter principal (2008–09), borde del cráter y Pichillaima
+    this.fumaroles = [[0.03, 0.04, 0.42], [-0.06, 0.10, 0.16], [0.11, -0.03, 0.14], [-0.12, -0.06, 0.08], [0.15, 0.13, 0.07], [0.02, -0.15, 0.08], [-0.17, 0.06, 0.05], [0.36, -1.08, 0.02]];
+    this.fumF = 300; this.fumDh = 150; this.fumL = 400; this.sunW = [0, 0, 1];
   }
   setSpots(sp) { this.spots = sp; }
   // ctx: {src, plume, vents, wind{to,speed}, night, visDt, simRunning, phreatic}
@@ -177,13 +194,32 @@ export class FX {
     this.boltLife -= dtv;
     if (s.MER > 3e5 && P && rnd() < dtv * Math.min(6, (Math.log10(s.MER) - 5.2) * 2.2)) this.makeBolt(P, vx0, vy0, vz0, wx, wy);
     if (this.boltLife <= 0) { this.boltGeo.setDrawRange(0, 0); this.flash = null; }
-    // ---------------- fumarolas (siempre)
-    const fr = ctx.fumarole ?? 1;
+    // ---------------- fumarolas: pluma boyante de vapor (Briggs 1975) con condensación
+    // Q: flujo de calor (MW) → flujo de flotabilidad F = g·Q/(π·cp·ρ·T) (m⁴/s³)
+    const fm = ctx.fum || { Q: 40, rh: 0.7, Ta: 268 };
+    const Qw = fm.Q * 1e6 * (ctx.fumarole ?? 1);
+    const F = 9.81 * Qw / (Math.PI * 1005 * 0.9 * fm.Ta);
+    const uLow = Math.max(1.2, windAt(3200, vref) * 0.55);
+    const sStab = 9.81 / fm.Ta * 0.0033;
+    this.fumF = F; this.fumU = uLow;
+    this.fumDh = 2.6 * Math.cbrt(F / (uLow * sStab));        // ascenso final en atmósfera estable
+    // visibilidad del vapor condensado: crece con la humedad y el frío
+    this.fumL = (110 + 1500 * Math.pow(fm.rh, 4)) * (1 + Math.max(0, 275 - fm.Ta) / 25);
+    const rate = (2 + 2.6 * Math.sqrt(Qw / 1e7));
     for (let q = 0; q < this.fumaroles.length; q++) {
-      const n = emit('fum' + q, (q === 0 ? 3 : 1.2) * fr);
-      const [fx, fy] = this.fumaroles[q];
-      for (let k = 0; k < n; k++) this.smoke.add(fx * 1000 + (rnd() - 0.5) * 80, fy * 1000 + (rnd() - 0.5) * 80, this.hAt(fx, fy) + 5, 0, 0, 3 + 4 * rnd(), 60 + 60 * rnd(), 25, 260, STEAM, 0.92, 0.93, 0.95, 0.45);
+      const [fx, fy, wgt] = this.fumaroles[q];
+      const n = emit('fum' + q, rate * wgt * 6);
+      for (let k = 0; k < n; k++) {
+        const z0 = this.hAt(fx, fy) + 4;
+        const i = this.smoke.add(fx * 1000 + (rnd() - 0.5) * 50, fy * 1000 + (rnd() - 0.5) * 50, z0, (rnd() - 0.5) * 2, (rnd() - 0.5) * 2, 4 + 6 * rnd(),
+          120 + 160 * rnd(), 14 + 10 * rnd(), 0, FUM, 0.93, 0.94, 0.96, 0.34);
+        if (i >= 0) this.smoke.drag[i] = z0;
+      }
     }
+    // bruma de SO₂ / sulfatos: azulada, tenue y persistente a sotavento
+    const ng = emit('gas', 0.07 * Math.sqrt(Qw / 1e7));
+    for (let k = 0; k < ng; k++) { const zt = this.hAt(0, 0) + this.fumDh * (0.7 + 0.5 * rnd());
+      this.smoke.add((rnd() - 0.5) * 300, (rnd() - 0.5) * 300, zt, wx * uLow, wy * uLow, 0, 900 + 600 * rnd(), 200, 900, GAS, 0.66, 0.70, 0.80, 0.010); }
     // ---------------- puntos activos desde el resumen del solver
     const pick = (arr) => { if (!arr.length) return null; const tot = arr.totalW || (arr.totalW = arr.reduce((a, b) => a + b.w, 0)); let r = rnd() * tot; for (const s of arr) { r -= s.w; if (r <= 0) return s; } return arr[arr.length - 1]; };
     const sp = this.spots;
@@ -250,6 +286,8 @@ export class FX {
           const k = Math.min(1, dt * 1.6);
           vx += (tvx - vx) * k; vy += (tvy - vy) * k; vz += (tvz - vz) * k;
           S.s1[i] = Math.max(S.s1[i], pl.b * 1.4);
+          // autosombra: el lado de la columna que mira al sol queda más iluminado
+          const sw = this.sunW; S.shade[i] = 0.55 + 0.45 * Math.max(-1, Math.min(1, (dx * sw[0] + dy * sw[1]) / rr * 1.4 + sw[2] * 0.3));
         } else {
           // nube paraguas: corriente de gravedad radial + viento
           const cx = vx0 + wx * P.xTop, cy = vy0 + wy * P.xTop;
@@ -260,6 +298,21 @@ export class FX {
           vz += ((P.Hnb + (P.Ht - P.Hnb) * 0.5 - z) * 0.01 - vz) * k;
           S.s1[i] = Math.max(S.s1[i], 1800 + S.age[i] * 6);
         }
+      } else if (t === FUM) {
+        // ascenso de Briggs: z − z0 = 1,6·F^(1/3)·x^(2/3)/u con x = u·t, hasta el ascenso final
+        const z0 = S.drag[i], rise = z - z0, age = Math.max(0.5, S.age[i]);
+        const u = this.fumU * (1 + rise / 900);
+        let w = 1.0667 * Math.cbrt(this.fumF) / Math.cbrt(u) / Math.cbrt(age);
+        if (rise > this.fumDh) w = -0.004 * (rise - this.fumDh) * 2;
+        const k = Math.min(1, dt * 0.8);
+        vz += (w - vz) * k;
+        const turb = 0.25 * u + 0.3 * Math.abs(w);
+        vx += (wx * u - vx) * k + (Math.random() - 0.5) * turb * dt * 2.2;
+        vy += (wy * u - vy) * k + (Math.random() - 0.5) * turb * dt * 2.2;
+        S.s1[i] = 18 + 0.62 * Math.max(0, rise) + 0.06 * S.age[i] * u;
+        S.s0[i] = S.s1[i];
+      } else if (t === GAS) {
+        vx += (wx * this.fumU * 1.3 - vx) * dt * 0.1; vy += (wy * this.fumU * 1.3 - vy) * dt * 0.1; vz *= 1 - dt * 0.2;
       } else if (t === SMOKE) {
         vz *= 1 - dt * 0.3; vx += (wx * W - vx) * dt * 0.3; vy += (wy * W - vy) * dt * 0.3;
       } else if (t === ASHF) {
@@ -329,18 +382,26 @@ export class FX {
         const size = (pool.s0[i] + (pool.s1[i] - pool.s0[i]) * Math.sqrt(f)) / 1000;
         const t = pool.type[i];
         let a = pool.col[i * 4 + 3];
-        if (sort) a *= Math.min(1, pool.age[i] * 2) * (1 - f * f) * (t === SMOKE ? (1 - 0.6 * f) : 1);
+        if (sort) {
+          a *= Math.min(1, pool.age[i] * 2) * (1 - f * f) * (t === SMOKE ? (1 - 0.6 * f) : 1);
+          if (t === FUM) { const dist = pool.age[i] * this.fumU * 1.1 + Math.max(0, pool.p[i * 3 + 2] - pool.drag[i]) * 0.5; a *= Math.exp(-dist / this.fumL) * Math.min(1, pool.age[i] * 0.8); }
+          // partículas suaves: se desvanecen al tocar el relieve
+          const gz = this.hAt(pool.p[i * 3] / 1000, pool.p[i * 3 + 1] / 1000), half = size * 500;
+          a *= Math.max(0, Math.min(1, (pool.p[i * 3 + 2] - gz + half * 0.2) / half));
+        }
         C[q * 4] = pool.col[i * 4]; C[q * 4 + 1] = pool.col[i * 4 + 1]; C[q * 4 + 2] = pool.col[i * 4 + 2]; C[q * 4 + 3] = a;
         SR[q * 2] = size; SR[q * 2 + 1] = pool.seed[i];
         G[q] = sort ? pool.glow[i] * Math.max(0, 1 - pool.age[i] / 25) : pool.glow[i] * (1 - f * 0.5);
+        pool.aMisc.array[q * 2] = f; pool.aMisc.array[q * 2 + 1] = pool.shade[i];
       }
       pool.g.instanceCount = n;
-      pool.aPos.needsUpdate = pool.aCol.needsUpdate = pool.aSR.needsUpdate = pool.aGlow.needsUpdate = true;
-      for (const [a, k] of [[pool.aPos, 3], [pool.aCol, 4], [pool.aSR, 2], [pool.aGlow, 1]]) { a.clearUpdateRanges(); a.addUpdateRange(0, Math.max(1, n * k)); }
+      pool.aPos.needsUpdate = pool.aCol.needsUpdate = pool.aSR.needsUpdate = pool.aGlow.needsUpdate = pool.aMisc.needsUpdate = true;
+      for (const [a, k] of [[pool.aPos, 3], [pool.aCol, 4], [pool.aSR, 2], [pool.aGlow, 1], [pool.aMisc, 2]]) { a.clearUpdateRanges(); a.addUpdateRange(0, Math.max(1, n * k)); }
     }
   }
-  setLighting(sunV, sunCol, skyCol, fogCol, fogD, camPos) {
-    for (const p of [this.smoke, this.glow]) { const u = p.uniforms; u.uSunV.value.copy(sunV); u.uSunCol.value.copy(sunCol); u.uSkyCol.value.copy(skyCol); u.uFogCol.value.copy(fogCol); u.uFogD.value = fogD; u.uCamPos.value.copy(camPos); }
+  setLighting(sunV, sunCol, skyCol, fogCol, fogD, camPos, sunW, time) {
+    if (sunW) this.sunW = [sunW.x, -sunW.z, sunW.y];
+    for (const p of [this.smoke, this.glow]) { const u = p.uniforms; u.uTime.value = time || 0; u.uSunV.value.copy(sunV); u.uSunCol.value.copy(sunCol); u.uSkyCol.value.copy(skyCol); u.uFogCol.value.copy(fogCol); u.uFogD.value = fogD; u.uCamPos.value.copy(camPos); }
   }
   clear() { this.smoke.count = 0; this.glow.count = 0; this.acc = {}; }
 }

@@ -34,15 +34,19 @@ Chrome, Edge, Firefox y Safari recientes con GPU dedicada o integrada moderna.
   momento; clic atrás = recalcular hasta ese momento (el motor es determinista).
 * **Capas de análisis**: profundidad máxima, tiempo de llegada (isócronas cada 10 min), presión
   dinámica, espesor de lava, isópacas de ceniza, CDP y probabilidad Monte Carlo.
-* `?q=2` usa la grilla de 120 m (equipos modestos); `?esc=e1751` abre un escenario.
+* `?q=2` usa la grilla de 120 m (equipos modestos); `?m=1` malla del relieve a 30 m (Ultra);
+  `?esc=reposo` abre el estado actual (sólo fumarolas); `?spin=1.5` horas de pre-cálculo de ríos.
 
 ## Datos
 
 | Dato | Fuente |
 |---|---|
-| Relieve | Copernicus GLO-30 (DLR/Airbus), remuestreado a 60 m, 867 × 1087 celdas (52 × 65 km) |
-| Imagen | Sentinel-2 cloudless 2023 (EOX, datos Copernicus) |
+| Relieve (render) | **Copernicus GLO-30 original** (1 arcseg ≈ 24 × 31 m, tile S39 W072, AWS Open Data), reproyectado a una grilla local de 30 m (1733 × 2173 celdas): alturas, mapa de normales por píxel, oclusión ambiental y sombras |
+| Relieve (motor) | El mismo GLO-30 agregado a 60 m (867 × 1087 celdas, 52 × 65 km); diferencia mediana con el de 30 m: 0 m |
+| Imagen | **Sentinel-2 cloudless 2024** (EOX, datos Copernicus): base a 16 m y recorte de ~8 m sobre el volcán, Melipeuco y Conguillío (x −13…15 km, y −21…13 km) |
+| Lagos | Detectados en el GLO-30 (superficie plana, desviación < 0,7 m) y oscuros en Sentinel-2: Lago Conguillío 5,9 km², Arcoíris/Verde, Captrén, etc. |
 | Caminos, puentes, edificios, lugares, ríos | © colaboradores de OpenStreetMap |
+| Escorrentía | ~55 L/s/km² media anual, régimen mensual pluvio-nival (supuesto regional) |
 | Catálogo eruptivo | Global Volcanism Program (Smithsonian) y SERNAGEOMIN, IEV aproximados |
 
 Capas derivadas al cargar: pendiente, **glaciar** (≥1.950 m en el edificio del Llaima, donde la
@@ -77,6 +81,22 @@ no negativas, bordes de salida libre. **Erosión y depositación** hacia la conc
 equilibrio de Takahashi (1978), `C∞ = ρw·tanθ / ((ρs−ρw)(tanφ−tanθ))`: el lahar se carga de
 sedimento en las laderas empinadas (bulking) y lo deja en las planicies (debulking); el lecho sube o
 baja. Infiltración en suelo permeable, depósito de películas finas.
+
+### Ríos con caudal real
+
+Direcciones de flujo D8 sobre el DEM, área drenada de cada celda y aporte lateral a cada celda de
+cauce. Escorrentía específica media de ~55 L/s/km² (Andes de La Araucanía) con régimen
+pluvio-nival mensual (máximos en invierno por lluvia y en primavera por deshielo, mínimos a fines
+del verano). Al iniciar se integra el motor sólo con los ríos hasta el **régimen permanente** y ese
+estado es la condición inicial. Así:
+
+* el lahar se **mezcla y diluye** con el agua del río (la concentración baja y pasa a flujo
+  hiperconcentrado aguas abajo);
+* los sensores muestran el **nivel del río** y la crecida sobre el nivel normal (hidrograma real);
+* el lecho del río está acorazado: sólo una crecida moviliza sedimento.
+
+Todas las estadísticas de lahar (profundidad máxima, llegada, presión dinámica) se calculan como
+**exceso sobre el nivel base**.
 
 ### Lava
 
@@ -126,6 +146,16 @@ difusión turbulenta (lineal para granos gruesos y ley 5/2 para los finos). El d
 **incremental y respeta el tiempo de caída**: la ceniza fina llega a los pueblos minutos u horas
 después que el lapilli.
 
+### Fumarolas y gases (estado de reposo y durante la erupción)
+
+El Llaima es un volcán de conducto abierto con desgasificación persistente desde los conos anidados
+del cráter. La pluma de vapor usa la teoría de **Briggs (1975)**: flujo de calor Q (MW, ajustable) →
+flujo de flotabilidad F = g·Q/(π·cp·ρ·T); ascenso z = 1,6·F^(1/3)·x^(2/3)/u con el viento de baja
+altura, hasta el ascenso final en atmósfera estable 2,6·(F/(u·s))^(1/3). El vapor sólo se ve
+mientras está condensado: la longitud visible crece con la **humedad relativa** y con el frío
+(por mes y hora). La intensidad sigue el **ciclo de ~7 días** con variaciones de hasta 10× medido
+con DOAS en el Llaima (Bredemeyer y Hansteen, 2014). Bruma tenue de SO₂/sulfatos a sotavento.
+
 ### Incendios
 
 Autómata celular sobre el combustible vegetal: ignición por lava (>900 K) y CDP, propagación a las
@@ -137,8 +167,18 @@ extinción por lahar o lluvia y agotamiento del combustible.
 Adaptativo con condición CFL `Δt = 0,55·Δx / (√(g·h_max) + u_max)` leída desde la GPU cuatro veces
 por segundo; más corto mientras hay corrientes piroclásticas.
 
+### Bosque 3D
+
+Árboles instanciados alrededor de la cámara donde la imagen muestra bosque: **araucaria** (copa en
+paraguas sobre fuste alto) entre ~950 y 1.780 m, **lenga** en la zona alta y **coigüe/roble** en los
+valles; nunca sobre lagos ni cauces. Cada árbol se quema, se cubre de ceniza o es arrasado por lava,
+CDP o lahar profundo según el estado del motor.
+
 ### Partículas y efectos
 
+Humo y vapor con sombreado volumétrico aproximado: turbulencia que evoluciona en el tiempo,
+erosión de bordes con la edad, autosombra del lado opuesto al sol y dispersión de Mie hacia
+adelante (Henyey-Greenstein: bordes plateados a contraluz); se desvanecen al tocar el relieve.
 Columna guiada por la solución de la pluma (eje, radio, velocidad) que se abre en la nube paraguas;
 fuentes de lava y **bombas balísticas con arrastre aerodinámico** (Mastin 2001) que dejan polvo y
 brasas al caer; explosiones estrombolianas por pulsos; rayos volcánicos; vapor donde la lava toca el
@@ -174,7 +214,8 @@ src/runner.js     paso adaptativo, fuentes, series de tiempo
 src/eruption.js   fuente eruptiva en el tiempo, núcleos de tefra
 src/plume.js      modelo integral de pluma y Tephra2
 src/terrain.js    shaders de terreno y fluidos
-src/fx.js         partículas físicas
+src/fx.js         partículas físicas (columna, fumarolas, balística, CDP, fuego)
+src/forest.js     bosque 3D instanciado
 src/overlays.js   caminos, puentes, edificios, etiquetas
 src/ensemble.js   análisis probabilístico
 src/main.js       aplicación, cámara, interfaz
@@ -183,6 +224,8 @@ lib/              three.js r160 (MIT)
 
 ## Referencias
 
+Briggs (1975) plume rise · Bredemeyer & Hansteen (2014) ciclos de SO₂ en Llaima y Villarrica ·
+Copernicus DEM GLO-30 (ESA/Airbus) · EOX Sentinel-2 cloudless 2024 ·
 Bates, Horritt & Fewtrell (2010) J. Hydrol. · de Almeida et al. (2012) Water Resour. Res. ·
 O'Brien & Julien (1988) J. Hydraul. Eng. · Takahashi (1978) J. Hydraul. Div. ·
 Iverson, Schilling & Vallance (1998) GSA Bull. · Pierson (1998) · Giordano, Russell & Dingwell (2008)

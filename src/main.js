@@ -8,7 +8,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { loadData, makeGeo, heightSampler } from './data.js';
+import { loadData, makeGeo, heightSampler, QSPEC_MONTH } from './data.js';
 import { SCENARIOS, CATALOG, GAUGES, MONTHS, VENTS } from './config.js';
 import { EruptionSource, fissureVents } from './eruption.js';
 import { Solver } from './solver.js';
@@ -16,6 +16,7 @@ import { Runner } from './runner.js';
 import { createTerrain } from './terrain.js';
 import { createOverlays, Labels } from './overlays.js';
 import { FX } from './fx.js';
+import { Forest } from './forest.js';
 import { Ensemble, STYLES } from './ensemble.js';
 import { Sound } from './audio.js';
 import { lineChart, barChart, histChart, fmtT, fmtN } from './charts.js';
@@ -29,10 +30,10 @@ const mobile = matchMedia('(max-width: 900px)').matches;
 // ------------------------------------------------------------------ estado
 const S = {
   scen: params.get('esc') && SCENARIOS[params.get('esc')] ? params.get('esc') : 'e2008',
-  mult: 0, emult: 0, T0: 1420, month: 0, hour: 18, wto: 100, wsp: 22, rain: 0, rainS: 2, melt: 1, erode: true,
+  mult: 0, emult: 0, T0: 1420, fumQ: 1.6, rh: 0, month: 0, hour: 18, wto: 100, wsp: 22, rain: 0, rainS: 2, melt: 1, erode: true,
   ventMode: 'scen', customVents: null, fisA: null,
   playing: false, speed: 300, quality: +(params.get('q') || (mobile ? 2 : 1)), overlay: 0, base: 0, ex: 1.5, probCh: 0,
-  show: { roads: true, rivers: false, blds: true, labels: true, fx: true, shadows: true, contours: false, snow: true, sound: false },
+  show: { roads: true, rivers: false, blds: true, labels: true, fx: true, trees: true, shadows: true, contours: false, snow: true, sound: false },
   gaugeSel: 0, probe: null, runTo: null, maxSteps: 30, capSteps: +(params.get('steps') || 0),
 };
 
@@ -40,7 +41,7 @@ const setLoad = (t, f) => { $('loadtxt').textContent = t; if (f != null) $('lbar
 const fail = m => { $('loading').innerHTML = `<div><b>LLAIMA 3D</b><div class="err">${m}</div></div>`; };
 
 let D, geo, hAt, renderer, scene, camera, controls, composer, bloom, sky, stars;
-let sol, run, terr, ovl, fx, labels, ens = null, src;
+let sol, run, terr, ovl, fx, labels, ens = null, src, forest;
 const snd = new Sound();
 let gaugePts = [], allPts = [], idx = {}, sites = [];
 const series = { gauges: [] };
@@ -73,12 +74,20 @@ async function boot() {
   satTex.colorSpace = THREE.SRGBColorSpace; satTex.anisotropy = renderer.capabilities.getMaxAnisotropy(); satTex.generateMipmaps = true; satTex.minFilter = THREE.LinearMipmapLinearFilter;
   // motor
   setLoad('Compilando el motor de simulación…', 0.8);
+  // recorte Sentinel-2 2024 de ~8 m sobre el volcán, Melipeuco y Conguillío (sólo equipos de escritorio)
+  let satHi = null;
+  if (!mobile && renderer.capabilities.maxTextureSize >= 4096 && params.get('hi') !== '0') {
+    setLoad('Cargando imagen de alta resolución del volcán…', 0.74);
+    satHi = await new THREE.TextureLoader().loadAsync('data/sathi.jpg').catch(() => null);
+    if (satHi) { satHi.colorSpace = THREE.SRGBColorSpace; satHi.anisotropy = satTex.anisotropy; satHi.minFilter = THREE.LinearMipmapLinearFilter; }
+  }
   sol = new Solver(renderer, D, { scale: S.quality });
-  run = new Runner(sol, D);
-  terr = createTerrain(D, sol, satTex, { step: mobile ? 2 : 1 });
+  run = new Runner(sol, D, { spinHours: +(params.get('spin') ?? 1.5) });
+  terr = createTerrain(D, sol, satTex, { step: +(params.get('m') || (mobile ? 4 : S.quality === 1 ? 2 : 2)), satHi, hiBounds: [-13, 15, -21, 13] });
   scene.add(terr.mesh); scene.add(terr.fluid);
   ovl = createOverlays(D, sol, hAt, terr.shared); scene.add(ovl.group);
   fx = new FX(scene, hAt);
+  forest = new Forest(scene, D, sol, hAt, terr.shared, mobile ? 12000 : 70000);
   labels = new Labels($('labels'), camera, hAt, () => S.ex);
   // post-proceso
   const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: mobile ? 0 : 4 });
@@ -151,7 +160,7 @@ function applyScenario(key, fromPreset) {
   const ref = (vents && vents[0]) || (sc.vents && sc.vents[0]) || sc.fissure || { x: 0, y: 0 };
   const ventZ = hAt(ref.x, ref.y);
   src = new EruptionSource(sc, { mult: Math.pow(10, S.mult), emult: Math.pow(10, S.emult), wind: { to: S.wto, speed: S.wsp }, vents, T0: S.T0, ventZ });
-  run.start(src, { month: S.month, rain: S.rain, rainStart: S.rainS, melt: S.melt, erode: S.erode ? 1 : 0 });
+  run.start(src, { month: S.month, rain: S.rain, rainStart: S.rainS, melt: S.melt, erode: S.erode ? 1 : 0, onSpin: () => setLoad && $('loadtxt') && setLoad('Equilibrando el caudal de los ríos para ' + MONTHS[S.month] + '…', 0.9) });
   fx.clear(); ovl.setVents(src.vents, S.ex);
   events = []; evFlags = {}; series.gauges = gaugePts.map(() => []); $('log').innerHTML = '';
   S.runTo = null; S.tEnd = Math.min(4 * 86400, src.tEnd + 3 * 3600);
@@ -202,10 +211,10 @@ function updateLighting() {
   stars.material.opacity = ss(0.5, 0.95, NIGHT) * 0.9;
   sky.visible = day > 0.02;
   scene.background = sky.visible ? null : NIGHT_BG;
-  terr.FU.uLavaGain.value = 1.4;
+  terr.FU.uLavaGain.value = 1.4; sh.uNight.value = NIGHT;
   // partículas
   const sv = sunDir.clone().transformDirection(camera.matrixWorldInverse);
-  fx.setLighting(sv, sh.uSunCol.value, sh.uSkyCol.value, sh.uFogCol.value, sh.uFogD.value, camera.position);
+  fx.setLighting(sv, sh.uSunCol.value, sh.uSkyCol.value, sh.uFogCol.value, sh.uFogD.value, camera.position, sunDir, performance.now() / 1000);
   return sp;
 }
 
@@ -228,7 +237,7 @@ function readback(force) {
   fx.setSpots(sum.spots);
   smp = sol.sample('all');
   const g0 = idx.g[0];
-  gaugePts.forEach((g, i) => { const s = smp[g0 + i]; const arr = series.gauges[i]; if (arr) { if (!arr.length || run.t - arr[arr.length - 1][0] > 20 || force) arr.push([run.t, s.fluid[0], s.fluidP[0], s.fluid[2]]); if (arr.length > 3000) arr.shift(); } });
+  gaugePts.forEach((g, i) => { const s = smp[g0 + i]; const arr = series.gauges[i]; if (arr) { if (!arr.length || run.t - arr[arr.length - 1][0] > 20 || force) arr.push([run.t, s.fluid[0], s.fluidP[0], s.fluid[2], s.base[0]]); if (arr.length > 3000) arr.shift(); } });
   run.record({});
   detectEvents();
   if (S.probe) showProbe(S.probe.x, S.probe.y, true);
@@ -266,7 +275,7 @@ function detectEvents() {
   for (const k of [1, 10, 50, 100]) if (hit >= k && !f['hb' + k]) { f['hb' + k] = 1; logEv('lahar', `${hit} edificio${hit > 1 ? 's' : ''} alcanzado${hit > 1 ? 's' : ''} por flujos`); }
   // alcance de la lava
   if (run.sum && run.sum.spots) { let dm = 0; const v = src.vents[0]; for (const l of run.sum.spots.lava) dm = Math.max(dm, Math.hypot(l.x - v.x, l.y - v.y)); const km = Math.floor(dm); if (km >= 2 && km > (f.lkm || 1)) { f.lkm = km; if (km % 2 === 0 || km < 6) logEv('lava', `El frente de lava está a ~${km} km de la boca`, run.t, km % 4 === 0); } }
-  if (st && !st.active && run.t > 600 && !f.end) { f.end = 1; logEv('ash', 'La fuente eruptiva se detiene; los flujos siguen evolucionando', run.t, false); }
+  if (st && !st.active && run.t > 600 && !f.end && (f.start || f.lava)) { f.end = 1; logEv('ash', 'La fuente eruptiva se detiene; los flujos siguen evolucionando', run.t, false); }
 }
 
 // ------------------------------------------------------------------ UI
@@ -277,17 +286,19 @@ function buildUI() {
   const bind = (id, key, fmt, num = true) => { const el = $(id); el.addEventListener('input', () => { S[key] = num ? +el.value : el.value; if ($('o_' + id)) $('o_' + id).textContent = fmt(S[key]); }); };
   const F = {
     mult: v => '×' + Math.pow(10, v).toFixed(v < -0.5 ? 2 : 1), emult: v => '×' + Math.pow(10, v).toFixed(v < -0.5 ? 2 : 1), T0: v => (v - 273) + ' °C', hour: v => `${String(Math.floor(v)).padStart(2, '0')}:${String(Math.round(v % 1 * 60)).padStart(2, '0')}`,
+    fumQ: v => Math.round(Math.pow(10, v)) + ' MW', rh: v => v ? v + ' %' : 'según mes y hora',
     wto: v => v + '° ' + dirName(v), wsp: v => v + ' m/s', rain: v => v ? v + ' mm/h' : 'sin lluvia', rainS: v => 'T+' + v + ' h', melt: v => '×' + v.toFixed(2), ex: v => '×' + v.toFixed(1), yrs: v => v + ' años',
   };
-  for (const k of ['mult', 'emult', 'T0', 'hour', 'wto', 'wsp', 'rain', 'rainS', 'melt']) bind(k, k, F[k]);
+  for (const k of ['mult', 'emult', 'T0', 'hour', 'wto', 'wsp', 'rain', 'rainS', 'melt', 'fumQ', 'rh']) bind(k, k, F[k]);
   $('month').addEventListener('change', () => S.month = +$('month').value);
   $('erode').addEventListener('change', () => S.erode = $('erode').checked);
   $('apply').onclick = () => { applyScenario(S.scen, false); S.playing = true; $('play').textContent = '❚❚'; };
   $('ex').addEventListener('input', () => { S.ex = +$('ex').value; $('o_ex').textContent = F.ex(S.ex); setEx(); });
   $('o_ex').textContent = F.ex(S.ex);
   $('yrs').addEventListener('input', () => { $('o_yrs').textContent = F.yrs(+$('yrs').value); recurrence(); }); $('o_yrs').textContent = F.yrs(10);
-  $('quality').value = String(S.quality);
-  $('quality').addEventListener('change', () => { const u = new URL(location.href); u.searchParams.set('q', $('quality').value); u.searchParams.set('esc', S.scen); location.href = u.toString(); });
+  const qv = (params.get('m') === '1' ? 'u' : '') + S.quality;
+  $('quality').value = ['u1', '1', '2'].includes(qv) ? qv : String(S.quality);
+  $('quality').addEventListener('change', () => { const v = $('quality').value, u = new URL(location.href); u.searchParams.set('q', v.replace('u', '')); if (v === 'u1') u.searchParams.set('m', '1'); else u.searchParams.delete('m'); u.searchParams.set('esc', S.scen); location.href = u.toString(); });
   // pestañas
   document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => { document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b)); document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 'tab-' + b.dataset.tab)); updateUI(true); if (b.dataset.tab === 'hist') histChart($('cHist'), CATALOG); if (b.dataset.tab === 'prob') recurrence(); });
   // boca
@@ -301,7 +312,7 @@ function buildUI() {
   document.querySelectorAll('#baseSel button').forEach(b => b.onclick = () => { document.querySelectorAll('#baseSel button').forEach(x => x.classList.toggle('on', x === b)); S.base = +b.dataset.b; terr.U.uBase.value = S.base; });
   document.querySelectorAll('#ovSel button').forEach(b => b.onclick = () => setOverlay(+b.dataset.o));
   document.querySelectorAll('#probCh button').forEach(b => b.onclick = () => { document.querySelectorAll('#probCh button').forEach(x => x.classList.toggle('on', x === b)); S.probCh = +b.dataset.c; terr.U.uProbCh.value = S.probCh; if (S.overlay !== 6) setOverlay(6); else legend(); });
-  const TG = [['roads', 'Caminos'], ['rivers', 'Ríos'], ['blds', 'Edificios'], ['labels', 'Etiquetas'], ['fx', 'Partículas'], ['shadows', 'Sombras'], ['contours', 'Curvas de nivel'], ['snow', 'Nieve y glaciar'], ['sound', 'Sonido']];
+  const TG = [['roads', 'Caminos'], ['rivers', 'Ríos'], ['blds', 'Edificios'], ['labels', 'Etiquetas'], ['fx', 'Partículas'], ['trees', 'Bosque 3D'], ['shadows', 'Sombras'], ['contours', 'Curvas de nivel'], ['snow', 'Nieve y glaciar'], ['sound', 'Sonido']];
   for (const [k, t] of TG) { const l = document.createElement('label'); l.innerHTML = `<input type="checkbox" ${S.show[k] ? 'checked' : ''}> ${t}`; l.querySelector('input').onchange = e => { S.show[k] = e.target.checked; applyShow(); }; $('toggles').appendChild(l); }
   applyShow();
   // sensores
@@ -336,13 +347,13 @@ function buildUI() {
 function dirName(a) { return ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'][Math.round(((a % 360) + 360) % 360 / 22.5) % 16]; }
 function syncControls() {
   const set = (id, v) => { $(id).value = v; $(id).dispatchEvent(new Event('input')); };
-  set('mult', S.mult); set('emult', S.emult); set('T0', S.T0); set('hour', S.hour); set('wto', S.wto); set('wsp', S.wsp); set('rain', S.rain); set('rainS', S.rainS); set('melt', S.melt);
+  set('mult', S.mult); set('emult', S.emult); set('T0', S.T0); set('hour', S.hour); set('wto', S.wto); set('wsp', S.wsp); set('rain', S.rain); set('rainS', S.rainS); set('melt', S.melt); set('fumQ', S.fumQ); set('rh', S.rh);
   $('month').value = S.month;
 }
 function applyShow() {
   ovl.roads.visible = S.show.roads; ovl.rivers.visible = S.show.rivers; ovl.blds.visible = S.show.blds;
   if (S.show.sound) snd.enable(); else snd.disable();
-  fx.smoke.mesh.visible = fx.glow.mesh.visible = S.show.fx; terr.U.uShadows.value = S.show.shadows ? 1 : 0; terr.U.uContours.value = S.show.contours ? 1 : 0; terr.U.uSnowVis.value = S.show.snow ? 1 : 0;
+  fx.smoke.mesh.visible = fx.glow.mesh.visible = S.show.fx; forest.visible = S.show.trees; terr.U.uShadows.value = S.show.shadows ? 1 : 0; terr.U.uContours.value = S.show.contours ? 1 : 0; terr.U.uSnowVis.value = S.show.snow ? 1 : 0;
 }
 function setEx() {
   terr.shared.uEx.value = S.ex; ovl.setRiverEx(S.ex); ovl.setVents(src.vents, S.ex);
@@ -369,7 +380,7 @@ function buildTimelineMarks() {
   const M = $('tmarks'); M.innerHTML = '';
   const span = S.tEnd; const stepH = span > 172800 ? 24 : span > 43200 ? 6 : span > 14400 ? 2 : 1;
   for (let h = stepH; h * 3600 < span; h += stepH) { const s = document.createElement('span'); s.style.left = (100 * h * 3600 / span) + '%'; s.textContent = h >= 24 && h % 24 === 0 ? `${h / 24} d` : `${h} h`; M.appendChild(s); }
-  for (const p of src.phases) { const i = document.createElement('i'); i.className = 'ph'; i.style.left = (100 * p.t0 * 60 / span) + '%'; i.title = p.MER ? 'Fase explosiva' : 'Lava'; M.appendChild(i); }
+  for (const p of src.phases.filter(p => p.MER || p.E)) { const i = document.createElement('i'); i.className = 'ph'; i.style.left = (100 * p.t0 * 60 / span) + '%'; i.title = p.MER ? 'Fase explosiva' : 'Lava'; M.appendChild(i); }
 }
 
 function kpi(label, value, hot) { return `<div class="${hot ? 'hot' : ''}"><b>${value}</b><small>${label}</small></div>`; }
@@ -411,13 +422,14 @@ function updateUI(force) {
     gaugePts.forEach((g, i) => {
       const s = smp[g0 + i], b = btns[i]; if (!b) return;
       const h = s.fluid[0], mx = s.stat[0], arr = s.stat[1];
-      b.classList.toggle('on', i === S.gaugeSel); b.classList.toggle('alarm', h > 0.3 || s.fluid[2] > 0.1 || s.fluidP[0] > 0.1);
-      b.querySelector('i').textContent = s.fluid[2] > 0.05 ? `lava ${s.fluid[2].toFixed(1)} m` : s.fluidP[0] > 0.05 ? `CDP ${s.fluidP[0].toFixed(1)} m` : h > 0.02 ? `${h.toFixed(2)} m` : '—';
+      b.classList.toggle('on', i === S.gaugeSel); b.classList.toggle('alarm', h - s.base[0] > 0.3 || s.fluid[2] > 0.1 || s.fluidP[0] > 0.1);
+      const ex = h - s.base[0];
+      b.querySelector('i').textContent = s.fluid[2] > 0.05 ? `lava ${s.fluid[2].toFixed(1)} m` : s.fluidP[0] > 0.05 ? `CDP ${s.fluidP[0].toFixed(1)} m` : ex > 0.1 ? `+${ex.toFixed(2)} m` : h > 0.02 ? `río ${h.toFixed(2)} m` : '—';
       b.querySelector('small').textContent = arr > 0 ? `lahar llegó a T+${fmtT(arr - 1)} · máx ${mx.toFixed(1)} m${s.ash[0] > 0.1 ? ` · ceniza ${s.ash[0].toFixed(1)} mm` : ''}` : s.ash[0] > 0.1 ? `ceniza ${s.ash[0].toFixed(1)} mm` : 'sin flujo';
     });
     const gs = series.gauges[S.gaugeSel] || [];
     $('gName').textContent = gaugePts[S.gaugeSel].name;
-    lineChart($('cGauge'), [{ data: gs.map(p => [p[0], p[1]]), color: '#d9a066', label: 'Lahar (m)' }, { data: gs.map(p => [p[0], p[3]]), color: '#ff6a2b', label: 'Lava' }, { data: gs.map(p => [p[0], p[2]]), color: '#c79bff', label: 'CDP' }], { tMax: Math.max(t, 3600), tNow: t });
+    lineChart($('cGauge'), [{ data: gs.map(p => [p[0], p[4] || 0]), color: '#4fa3e0', label: 'Base' }, { data: gs.map(p => [p[0], p[1]]), color: '#d9a066', label: 'Nivel (m)' }, { data: gs.map(p => [p[0], p[3]]), color: '#ff6a2b', label: 'Lava' }, { data: gs.map(p => [p[0], p[2]]), color: '#c79bff', label: 'CDP' }], { tMax: Math.max(t, 3600), tNow: t });
   }
   if (ens) updateEnsUI();
 }
@@ -547,7 +559,9 @@ function showProbe(x, y, live) {
   const row = (a, b, c = '') => `<dt>${a}</dt><dd class="${c}">${b}</dd>`;
   let h = `<button class="x" aria-label="Cerrar">×</button><h5>${dms(lat, 'S', 'N')} ${dms(lon, 'O', 'E')}</h5><dl>`;
   h += row('Elevación', `${z.toFixed(0)} m · pendiente ${D.slope[k].toFixed(0)}°`) + row('Desde la boca', `${dist.toFixed(2)} km al ${dirName(brg)}`);
-  h += row('Lahar ahora', f[0] > 0.02 ? `${f[0].toFixed(2)} m · Cv ${(f[1] * 100).toFixed(0)} %` : '—', f[0] > 0.3 ? 'bad' : '');
+  const bse = r.base[0], exn = f[0] - bse;
+  if (r.base[2] > 0.5) h += row('Río (caudal base)', `${bse.toFixed(2)} m de nivel · ${(r.base[3] * QSPEC_MONTH[S.month]).toFixed(1)} m³/s`);
+  h += row('Lahar ahora', exn > 0.05 ? `+${exn.toFixed(2)} m sobre el nivel normal · Cv ${(f[1] * 100).toFixed(0)} %` : '—', exn > 0.3 ? 'bad' : '');
   h += row('Lahar máximo', st[0] > 0.02 ? `${st[0].toFixed(2)} m · ${tr[2].toFixed(1)} m/s` : '—', st[0] > 0.5 ? 'bad' : st[0] > 0.05 ? 'warn' : '');
   if (st[1] > 0) h += row('Llegada del lahar', 'T+' + fmtT(st[1] - 1), 'bad');
   if (tr[3] > 0.5) h += row('Presión dinámica', `${tr[3].toFixed(0)} kN/m`, tr[3] > 35 ? 'bad' : 'warn');
@@ -612,17 +626,30 @@ function updateStatus(fps) {
   $('scaleBar').style.width = (n / mpp) + 'px'; $('scaleTxt').textContent = n >= 1000 ? (n / 1000) + ' km' : n + ' m';
   const g = hAt(camera.position.x, -camera.position.z);
   $('sAlt').textContent = `cámara ${(camera.position.y / S.ex * 1000).toFixed(0)} m s.n.m. (${((camera.position.y / S.ex * 1000) - g).toFixed(0)} m sobre el suelo)`;
-  $('sPerf').textContent = `${fps.toFixed(0)} fps · motor ${S.quality === 1 ? '60' : '120'} m · ${sol.nx}×${sol.ny}`;
+  $('sPerf').textContent = `${fps.toFixed(0)} fps · relieve 30 m · motor ${S.quality === 1 ? '60' : '120'} m (${sol.nx}×${sol.ny})`;
 }
 function onResize() {
   renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight); bloom.resolution.set(innerWidth / 2, innerHeight / 2);
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
 }
 
+// Desgasificación: flujo de calor con ciclo de ~7 días, humedad y temperatura del aire en la cumbre
+const RH_MONTH = [0.55, 0.55, 0.62, 0.72, 0.82, 0.88, 0.88, 0.85, 0.80, 0.74, 0.66, 0.58];
+function fumState() {
+  const { ms, off } = simDate(run.t); const days = ms / 86400000;
+  const hourL = ((ms / 3600000 + off) % 24 + 24) % 24;
+  const cyc = 1 + 0.55 * Math.sin(2 * Math.PI * days / 7.1 + 1.3) + 0.15 * Math.sin(2 * Math.PI * days / 1.9);
+  const Q = Math.pow(10, S.fumQ) * Math.max(0.2, cyc);
+  const night = Math.cos((hourL - 4) / 24 * 2 * Math.PI) * 0.5 + 0.5;
+  const rh = S.rh ? S.rh / 100 : Math.min(0.98, RH_MONTH[S.month] + 0.1 * night);
+  const Ta = 268 + 6 * Math.cos(S.month / 12 * 2 * Math.PI) - 4 * night + 2;
+  return { Q, rh, Ta };
+}
 function fxWarm(sec) {
   const st = run.cur ? run.cur.state : null; if (!st) return;
   const P = st.MER > 50 ? src.plume(st.MER) : null;
-  for (let t = 0; t < sec; t += 0.5) fx.update(0.5, { src: st, plume: P, vents: src.vents, wind: src.wind, phreatic: S.scen === 'freatica', fumarole: st.active ? 2.5 : 1 });
+  const fum = fumState();
+  for (let t = 0; t < sec; t += 0.5) fx.update(0.5, { src: st, plume: P, vents: src.vents, wind: src.wind, phreatic: S.scen === 'freatica', fumarole: st.active ? 2.5 : 1, fum });
 }
 // ------------------------------------------------------------------ bucle principal
 let last = 0, fpsS = 60, simRateS = 0, lastStat = 0;
@@ -647,15 +674,17 @@ function frame(now) {
   if (now - lastRead > (S.playing ? 220 : 600)) { lastRead = now; readback(false); }
   // render
   stepCam();
-  terr.bind(sol); ovl.bind(sol);
+  terr.bind(sol); ovl.bind(sol); forest.bind(sol);
+  { const gx = controls.target.x, gy = -controls.target.z; const alt = camera.position.y / S.ex * 1000 - hAt(camera.position.x, -camera.position.z);
+    forest.update(gx, gy, Math.max(alt, camera.position.distanceTo(controls.target) * 1000 * 0.6)); }
   const sh = terr.shared; sh.uTime.value = now / 1000; sh.uCamPos.value.copy(camera.position); terr.U.uSimT.value = run.t;
   updateLighting();
   const st = run.cur ? run.cur.state : null;
   updateGlow(st);
   if (S.show.fx) {
     const P = st && st.MER > 50 ? src.plume(st.MER) : null;
-    const visSpeed = clamp(S.playing ? Math.sqrt(Math.max(1, simRateS)) * 0.6 : 0.25, 0.25, 6);
-    fx.update(dtr * visSpeed, { src: st, plume: P, vents: src.vents, wind: src.wind, phreatic: S.scen === 'freatica', fumarole: st && st.active ? 2.5 : 1 });
+    const visSpeed = clamp(S.playing ? Math.sqrt(Math.max(1, simRateS)) * 0.6 : 1, 0.25, 6);
+    fx.update(dtr * visSpeed, { src: st, plume: P, vents: src.vents, wind: src.wind, phreatic: S.scen === 'freatica', fumarole: st && st.active ? 2.5 : 1, fum: fumState() });
     fx.write(camera, S.ex);
   }
   labels.update(innerWidth, innerHeight, S.show.labels);

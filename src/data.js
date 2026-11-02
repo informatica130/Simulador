@@ -18,9 +18,9 @@ const json = async u => { const r = await fetch(u); if (!r.ok) throw new Error('
 
 export async function loadData(progress) {
   progress('Descargando relieve Copernicus, imagen Sentinel-2 y OpenStreetMap…', 0.05);
-  const [GR, osm, places, net, rivers, demP, relP, satS] = await Promise.all([
+  const [GR, osm, places, net, rivers, demP, relP, satS, d30P, w30P] = await Promise.all([
     json('data/grid.json'), json('data/osm.json'), json('data/places.json'), json('data/net.json'), json('data/rivers.json'),
-    pixels('data/dem.png'), pixels('data/rel.png'), pixels('data/sat_small.jpg'),
+    pixels('data/dem.png'), pixels('data/rel.png'), pixels('data/sat_small.jpg'), pixels('data/dem30.png'), pixels('data/water30.png'),
   ]);
   progress('Procesando terreno…', 0.35);
   const nx = GR.nx, ny = GR.ny, N = nx * ny;
@@ -83,8 +83,26 @@ export async function loadData(progress) {
     const c = (b1[k] - dem[k]) * 0.02 + (b2[k] - dem[k]) * 0.006;
     ao[k] = Math.max(0.35, Math.min(1, 1 - Math.max(0, c)));
   }
+  progress('Relieve de alta resolución Copernicus GLO-30…', 0.55);
+  // ---- DEM de 30 m (Copernicus GLO-30 original, 1 arcseg) en la misma proyección local, grilla alineada a la de 60 m
+  const nx30 = d30P.w, ny30 = d30P.h, N30 = nx30 * ny30, cell30 = GR.cell / 2;
+  const dem30 = new Float32Array(N30);
+  for (let i = 0; i < N30; i++) dem30[i] = (d30P.d[i * 4] * 256 + d30P.d[i * 4 + 1]) / 10;
+  // Textura de detalle (RGBA8): gradiente E y N codificado, oclusión ambiental, agua
+  const c30 = cell30 * 1000, enc = g => Math.round(127.5 + 127.5 * Math.sign(g) * Math.sqrt(Math.min(1, Math.abs(g) / 2.5)));
+  const a1 = boxBlur(dem30, nx30, ny30, 4), a2 = boxBlur(dem30, nx30, ny30, 20);
+  const det30 = new Uint8Array(N30 * 4);
+  for (let j = 0; j < ny30; j++) for (let i = 0; i < nx30; i++) {
+    const k = j * nx30 + i;
+    const gE = (dem30[j * nx30 + Math.min(nx30 - 1, i + 1)] - dem30[j * nx30 + Math.max(0, i - 1)]) / (2 * c30);
+    const gN = (dem30[Math.max(0, j - 1) * nx30 + i] - dem30[Math.min(ny30 - 1, j + 1) * nx30 + i]) / (2 * c30);
+    const c = (a1[k] - dem30[k]) * 0.03 + (a2[k] - dem30[k]) * 0.006;
+    det30[k * 4] = enc(gE); det30[k * 4 + 1] = enc(gN);
+    det30[k * 4 + 2] = Math.round(255 * Math.max(0.3, Math.min(1, 1 - Math.max(0, c))));
+    det30[k * 4 + 3] = w30P.d[k * 4];
+  }
   progress('Preparando capas…', 0.6);
-  return { GR, nx, ny, N, cellM, dem, river, basin, slope, ice, fuel, ao, glacier, osm, places, net, rivers, satAt };
+  return { GR, nx, ny, N, cellM, dem, river, basin, slope, ice, fuel, ao, glacier, osm, places, net, rivers, satAt, nx30, ny30, N30, cell30, dem30, det30 };
 }
 
 export function snowSWE(D, month) {
@@ -136,10 +154,63 @@ export function makeGeo(GR) {
 }
 
 export function heightSampler(D) {
-  const { GR, nx, ny, dem } = D;
+  const { GR } = D, nx = D.nx30, ny = D.ny30, dem = D.dem30, cell = D.cell30;
   return (x, y) => {
-    const fx = Math.max(0, Math.min(nx - 1.001, (x - GR.X0) / GR.cell)), fy = Math.max(0, Math.min(ny - 1.001, (GR.Y1 - y) / GR.cell));
+    const fx = Math.max(0, Math.min(nx - 1.001, (x - GR.X0) / cell)), fy = Math.max(0, Math.min(ny - 1.001, (GR.Y1 - y) / cell));
     const i = fx | 0, j = fy | 0, u = fx - i, v = fy - j;
     return dem[j * nx + i] * (1 - u) * (1 - v) + dem[j * nx + i + 1] * u * (1 - v) + dem[(j + 1) * nx + i] * (1 - u) * v + dem[(j + 1) * nx + i + 1] * u * v;
   };
 }
+
+// ---------------------------------------------------------------------
+// Hidrología: caudal base de los ríos (D8 sobre el DEM de 60 m).
+// Escorrentía específica media ~55 L/s/km² (Andes de La Araucanía) con
+// régimen mixto pluvio-nival: máximos en invierno (lluvia) y primavera
+// (deshielo), mínimos a fines del verano.
+// ---------------------------------------------------------------------
+export const QSPEC_MONTH = [0.55, 0.40, 0.38, 0.60, 1.10, 1.50, 1.45, 1.35, 1.25, 1.40, 1.30, 0.90].map(f => f * 0.055); // m³/s/km²
+let hydroCache = null;
+function hydro(D) {
+  if (hydroCache) return hydroCache;
+  const { nx, ny, N, dem, river } = D;
+  const down = new Int32Array(N).fill(-1), sl = new Float32Array(N);
+  const dI = [1, 1, 0, -1, -1, -1, 0, 1], dJ = [0, 1, 1, 1, 0, -1, -1, -1];
+  for (let j = 1; j < ny - 1; j++) for (let i = 1; i < nx - 1; i++) {
+    const k = j * nx + i; let best = 0, bk = -1;
+    for (let q = 0; q < 8; q++) { const kk = (j + dJ[q]) * nx + i + dI[q]; const s = (dem[k] - dem[kk]) / ((q & 1) ? 1.4142 : 1); if (s > best) { best = s; bk = kk; } }
+    down[k] = bk; sl[k] = best / D.cellM;
+  }
+  const order = new Uint32Array(N); for (let k = 0; k < N; k++) order[k] = k;
+  order.sort((a, b) => dem[b] - dem[a]);
+  const cellKm2 = D.cellM * D.cellM / 1e6;
+  const full = new Float32Array(N).fill(cellKm2), lat = new Float32Array(N), pend = new Float32Array(N).fill(cellKm2);
+  for (let q = 0; q < N; q++) {
+    const k = order[q], d = down[k];
+    if (d >= 0) full[d] += full[k];
+    if (river[k]) { lat[k] += pend[k]; }
+    else if (d >= 0) pend[d] += pend[k];
+  }
+  return (hydroCache = { full, lat, sl });
+}
+// Arreglo RGBA a la resolución del solver: (nivel inicial Manning, aporte lateral m/s, cauce, área drenada km²)
+export function riverBase(D, month, s) {
+  const H = hydro(D), qs = QSPEC_MONTH[month];
+  const nxs = Math.floor(D.nx / s), nys = Math.floor(D.ny / s), out = new Float32Array(nxs * nys * 4);
+  const w = D.cellM * s, cellA = w * w;
+  for (let j = 0; j < nys; j++) for (let i = 0; i < nxs; i++) {
+    let lat = 0, riv = 0, area = 0, hmax = 0;
+    for (let b = 0; b < s; b++) for (let c = 0; c < s; c++) {
+      const k = (j * s + b) * D.nx + i * s + c;
+      lat += H.lat[k];
+      if (D.river[k]) {
+        riv = 1; area = Math.max(area, H.full[k]);
+        const Q = H.full[k] * qs, S = Math.max(0.003, H.sl[k]);
+        hmax = Math.max(hmax, Math.pow(Q * 0.035 / (w * Math.sqrt(S)), 0.6));
+      }
+    }
+    const o = (j * nxs + i) * 4;
+    out[o] = riv ? hmax : 0; out[o + 1] = lat * qs / cellA; out[o + 2] = riv; out[o + 3] = area;
+  }
+  return out;
+}
+export function drainageAt(D, x, y) { const H = hydro(D); const i = Math.round((x - D.GR.X0) / D.GR.cell), j = Math.round((D.GR.Y1 - y) / D.GR.cell); return H.full[j * D.nx + i] || 0; }

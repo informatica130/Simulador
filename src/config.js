@@ -62,6 +62,12 @@ export const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'j
 // pulse (estromboliana: explosiones discretas).
 // ---------------------------------------------------------------------
 export const SCENARIOS = {
+  reposo: {
+    name: 'Hoy · reposo con fumarolas', short: 'Hoy (reposo)', vei: '—', date: [2026, 11, 2, 9.5],
+    desc: 'Estado actual: sin erupción desde 2009. Desgasificación persistente desde los conos anidados del cráter, con ciclos de ~7 días. Ríos con su caudal normal del mes. Úsalo como referencia del paisaje antes de simular una erupción.',
+    vents: [{ x: 0.03, y: 0.03, r: 0.12 }], w0: 0.03, T0: 1420, tgsd: [0.8, 1.7], wind: { to: 75, speed: 18 },
+    phases: [{ t0: 0, t1: 2880 }],
+  },
   e2008: {
     name: '1 ene 2008 · Estromboliana violenta', short: 'Ene 2008', vei: 'IEV 3', date: [2008, 1, 1, 17.9],
     desc: 'Fuente de lava y columna de 6–8 km. La lava desbordó el borde occidental y abrió canales en el glaciar; lahares pequeños por el Captrén y el Truful-Truful. Comenzó casi sin aviso.',
