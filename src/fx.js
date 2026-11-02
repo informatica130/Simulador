@@ -130,7 +130,7 @@ export class FX {
         const up = P.U0 * (0.6 + 0.4 * rnd());
         const dark = 0.16 + 0.08 * rnd();
         const c = steamy ? [0.78, 0.78, 0.8] : [dark * 1.08, dark, dark * 0.94];
-        this.smoke.add(v.x * 1000 + Math.cos(a) * r, v.y * 1000 + Math.sin(a) * r, this.hAt(v.x, v.y) + 30, 0, 0, up, 300 + 500 * rnd(), Math.max(60, P.b0 * 2.5), 600, SMOKE, c[0], c[1], c[2], 0.85, s.MER > 2e4 ? 0.9 : 0.2);
+        this.smoke.add(v.x * 1000 + Math.cos(a) * r, v.y * 1000 + Math.sin(a) * r, this.hAt(v.x, v.y) + 30, 0, 0, up, 300 + 500 * rnd(), Math.max(60, P.b0 * 2.5), 600, SMOKE, c[0], c[1], c[2], 0.85, s.MER > 2e4 ? 0.35 : 0.1);
       }
       // lluvia de ceniza bajo la nube paraguas
       n = emit('ashf', Math.max(0, 4 * (lg - 4)));
@@ -139,7 +139,7 @@ export class FX {
         const lat = (rnd() - 0.5) * (2500 + d * 0.25);
         const x = vx0 + wx * d + wy * lat, y = vy0 + wy * d - wx * lat;
         const z = P.Ht * (0.55 + 0.3 * rnd());
-        this.smoke.add(x, y, z, wx * vref * 0.5, wy * vref * 0.5, -(6 + 10 * rnd()), 900, 500, 1100, ASHF, 0.30, 0.28, 0.27, 0.10);
+        this.smoke.add(x, y, z, wx * vref * 0.5, wy * vref * 0.5, -(6 + 10 * rnd()), 900, 220, 650, ASHF, 0.30, 0.28, 0.27, 0.08);
       }
     }
     // ---------------- fuente de lava
@@ -273,6 +273,7 @@ export class FX {
       } else if (t === SPRAY) { vz -= 4 * dt; }
       x += vx * dt; y += vy * dt; z += vz * dt;
       const g = hAt(x / 1000, y / 1000);
+      if (t === ASHF && z < g + 600) { S.life[i] = Math.min(S.life[i], S.age[i] + 8); }
       if (z < g + 5) { z = g + 5; vz = Math.abs(vz) * 0.2; if (t === ASHF || t === SPRAY) { S.kill(i); continue; } }
       S.p[o] = x; S.p[o + 1] = y; S.p[o + 2] = z; S.v[o] = vx; S.v[o + 1] = vy; S.v[o + 2] = vz;
     }
@@ -331,7 +332,7 @@ export class FX {
         if (sort) a *= Math.min(1, pool.age[i] * 2) * (1 - f * f) * (t === SMOKE ? (1 - 0.6 * f) : 1);
         C[q * 4] = pool.col[i * 4]; C[q * 4 + 1] = pool.col[i * 4 + 1]; C[q * 4 + 2] = pool.col[i * 4 + 2]; C[q * 4 + 3] = a;
         SR[q * 2] = size; SR[q * 2 + 1] = pool.seed[i];
-        G[q] = sort ? pool.glow[i] * Math.max(0, 1 - pool.age[i] / 40) : pool.glow[i] * (1 - f * 0.5);
+        G[q] = sort ? pool.glow[i] * Math.max(0, 1 - pool.age[i] / 25) : pool.glow[i] * (1 - f * 0.5);
       }
       pool.g.instanceCount = n;
       pool.aPos.needsUpdate = pool.aCol.needsUpdate = pool.aSR.needsUpdate = pool.aGlow.needsUpdate = true;

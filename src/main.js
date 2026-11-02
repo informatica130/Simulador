@@ -198,7 +198,7 @@ function updateLighting() {
   const sunset = (1 - warm) * day;
   sh.uFogCol.value.setRGB(0.012 + 0.55 * day + 0.2 * sunset, 0.016 + 0.64 * day + 0.03 * sunset, 0.03 + 0.76 * day - 0.15 * sunset);
   sh.uFogD.value = 0.0016 + 0.004 * NIGHT;
-  renderer.toneMappingExposure = 0.72 + 1.0 * NIGHT;
+  renderer.toneMappingExposure = 0.72 + 0.6 * NIGHT;
   stars.material.opacity = ss(0.5, 0.95, NIGHT) * 0.9;
   sky.visible = day > 0.02;
   scene.background = sky.visible ? null : NIGHT_BG;
@@ -214,7 +214,7 @@ function updateGlow(st) {
   const P = terr.shared.uGlowP.value, C = terr.shared.uGlowC.value; let n = 0;
   const set = (x, y, z, r, c, I) => { if (n >= 8) return; P[n].set(x, z / 1000 * S.ex, -y, r); C[n].set(c[0] * I, c[1] * I, c[2] * I); n++; };
   const v = src.vents[0];
-  if (st && (st.fountain > 0 || st.MER > 0)) set(v.x, v.y, hAt(v.x, v.y) + 250, 3.5, [1, 0.33, 0.08], 0.5 * Math.log10(1 + st.fountain / 40) + 0.12 * Math.max(0, Math.log10(st.MER / 1e4)) + fx.boom * 0.8);
+  if (st && (st.fountain > 0 || st.MER > 0)) set(v.x, v.y, hAt(v.x, v.y) + 250, 3.5, [1, 0.33, 0.08], 0.35 * Math.log10(1 + st.fountain / 40) + 0.08 * Math.max(0, Math.log10(st.MER / 1e4)) + fx.boom * 0.5);
   const sp = run.sum && run.sum.spots;
   if (sp) { for (const h of sp.hot) set(h.x, h.y, hAt(h.x, h.y) + 80, 1.4, [1, 0.32, 0.07], Math.min(1.6, 0.25 * Math.log10(1 + h.w))); if (sp.fire.length) { const f = sp.fire.reduce((a, b) => b.w > a.w ? b : a); set(f.x, f.y, hAt(f.x, f.y) + 60, 1.6, [1, 0.42, 0.12], 0.6); } }
   if (fx.flash) set(fx.flash.x, fx.flash.y, fx.flash.z, 9, [0.75, 0.8, 1], 2.2);
