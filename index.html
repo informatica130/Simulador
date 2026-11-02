@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Llaima 3D · Motor de simulación volcánica</title>
+<meta name="description" content="Simulador físico en GPU de erupciones del volcán Llaima: lahares, lava, corrientes piroclásticas, ceniza, deshielo e incendios sobre el relieve real.">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">{ "imports": { "three": "./lib/three.module.js", "three/addons/": "./lib/addons/" } }</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="labels"></div>
+
+<header class="top">
+  <div class="brand"><span class="logo">▲</span><div><b>LLAIMA 3D</b><small>Motor de simulación volcánica</small></div></div>
+  <div class="search"><input id="q" type="search" placeholder="Buscar lugar, río, sensor…" autocomplete="off" aria-label="Buscar lugar"><div id="qres" class="qres" hidden></div></div>
+  <div class="clock"><b id="tclock">T+00:00:00</b><small id="lclock">—</small></div>
+  <div class="phase" id="phase">Reposo</div>
+</header>
+
+<aside class="panel left" id="left">
+  <nav class="tabs" role="tablist">
+    <button class="on" data-tab="esc">Escenario</button><button data-tab="fis">Física</button><button data-tab="prob">Probabilidad</button><button data-tab="hist">Historia</button>
+  </nav>
+  <section class="tab on" id="tab-esc">
+    <div class="scen" id="scenList"></div>
+    <p class="desc" id="scenDesc"></p>
+    <h4>Boca eruptiva</h4>
+    <div class="seg" id="ventSel">
+      <button data-v="scen" class="on">Del escenario</button><button data-v="crater">Cráter</button><button data-v="pichi">Pichillaima</button><button data-v="pick">Punto en el mapa</button><button data-v="fis">Fisura en el mapa</button>
+    </div>
+    <p class="hint" id="ventHint"></p>
+    <h4>Parámetros eruptivos</h4>
+    <div class="prm"><label>Intensidad explosiva <output id="o_mult"></output></label><input id="mult" type="range" min="-1.5" max="1.5" step="0.05" value="0"></div>
+    <div class="prm"><label>Tasa efusiva de lava <output id="o_emult"></output></label><input id="emult" type="range" min="-1.3" max="1.3" step="0.05" value="0"></div>
+    <div class="prm"><label>Temperatura de la lava <output id="o_T0"></output></label><input id="T0" type="range" min="1330" max="1480" step="5" value="1420"></div>
+    <h4>Ambiente</h4>
+    <div class="row2">
+      <div class="prm"><label>Mes</label><select id="month"></select></div>
+      <div class="prm"><label>Hora de inicio <output id="o_hour"></output></label><input id="hour" type="range" min="0" max="23.75" step="0.25" value="18"></div>
+    </div>
+    <div class="prm"><label>Viento en altura hacia <output id="o_wto"></output></label><input id="wto" type="range" min="0" max="355" step="5" value="100"></div>
+    <div class="prm"><label>Velocidad del viento (10 km) <output id="o_wsp"></output></label><input id="wsp" type="range" min="2" max="60" step="1" value="22"></div>
+    <div class="prm"><label>Lluvia <output id="o_rain"></output></label><input id="rain" type="range" min="0" max="40" step="1" value="0"></div>
+    <div class="prm"><label>La lluvia empieza a las <output id="o_rainS"></output></label><input id="rainS" type="range" min="0" max="24" step="0.5" value="2"></div>
+    <div class="prm"><label>Eficiencia de fusión del hielo <output id="o_melt"></output></label><input id="melt" type="range" min="0.2" max="3" step="0.05" value="1"></div>
+    <label class="chk"><input type="checkbox" id="erode" checked> Erosión y arrastre de sedimento (bulking)</label>
+    <button class="cta" id="apply">Aplicar y reiniciar simulación</button>
+  </section>
+  <section class="tab" id="tab-fis">
+    <div class="kpis" id="kpis"></div>
+    <figure class="ch"><figcaption>Columna eruptiva <span>altura (km s.n.m.) · tasa de masa</span></figcaption><canvas id="cCol"></canvas></figure>
+    <figure class="ch"><figcaption>Volúmenes <span>millones de m³</span></figcaption><canvas id="cVol"></canvas></figure>
+    <h4>Bitácora del motor</h4>
+    <ul class="log" id="log"></ul>
+  </section>
+  <section class="tab" id="tab-prob">
+    <h4>Recurrencia (catálogo histórico)</h4>
+    <div class="prm"><label>Horizonte <output id="o_yrs"></output></label><input id="yrs" type="range" min="1" max="50" step="1" value="10"></div>
+    <div class="kv" id="pRec"></div>
+    <figure class="ch"><figcaption>Erupciones por IEV desde 1640 <span>frecuencia relativa</span></figcaption><canvas id="cVei"></canvas></figure>
+    <h4>Mapa de probabilidad (Monte Carlo)</h4>
+    <p class="hint">Corre N erupciones posibles con el mismo motor físico (grilla de 120 m): estilo según el registro, boca en la cumbre, el Pichillaima o una fisura de flanco, mes y viento al azar. Se acumula en cuántas simulaciones cada lugar resulta afectado.</p>
+    <div class="row2">
+      <div class="prm"><label>Simulaciones</label><select id="ensN"><option>16</option><option selected>40</option><option>100</option><option>250</option></select></div>
+      <div class="prm"><label>Duración máx. por simulación</label><select id="ensT"><option value="6">6 h</option><option value="12" selected>12 h</option><option value="24">24 h</option></select></div>
+    </div>
+    <div class="row2"><button class="cta" id="ensGo">Calcular</button><button id="ensStop" class="ghost">Detener</button></div>
+    <div class="bar"><i id="ensBar"></i></div><p class="hint" id="ensTxt">Sin calcular.</p>
+    <div class="seg" id="probCh"><button data-c="0" class="on">Lahar &gt;0,5 m</button><button data-c="1">Lava</button><button data-c="2">CDP</button><button data-c="3">Ceniza &gt;10 mm</button></div>
+    <table class="ptab" id="pSites"><thead><tr><th>Lugar</th><th>Lahar</th><th>Lava</th><th>CDP</th><th>Ceniza</th></tr></thead><tbody></tbody></table>
+  </section>
+  <section class="tab" id="tab-hist">
+    <figure class="ch"><figcaption>Erupciones del Llaima desde 1640 <span>IEV estimado (GVP / SERNAGEOMIN)</span></figcaption><canvas id="cHist"></canvas></figure>
+    <ul class="hist" id="histList"></ul>
+  </section>
+</aside>
+
+<aside class="panel right" id="right">
+  <h4>Mapa base</h4>
+  <div class="seg" id="baseSel"><button data-b="0" class="on">Satélite</button><button data-b="1">Relieve</button><button data-b="2">Pendiente</button><button data-b="3">Mapa</button></div>
+  <h4>Capa de análisis</h4>
+  <div class="olist" id="ovSel">
+    <button data-o="0" class="on">Ninguna (vista realista)</button>
+    <button data-o="1">Profundidad máx. del lahar</button>
+    <button data-o="2">Tiempo de llegada del lahar</button>
+    <button data-o="7">Presión dinámica del lahar</button>
+    <button data-o="3">Espesor máx. de lava</button>
+    <button data-o="4">Isópacas de ceniza</button>
+    <button data-o="5">Corrientes piroclásticas</button>
+    <button data-o="6">Probabilidad (Monte Carlo)</button>
+  </div>
+  <div class="legend" id="legend"></div>
+  <h4>Elementos</h4>
+  <div class="tg" id="toggles"></div>
+  <div class="prm"><label>Exageración vertical <output id="o_ex"></output></label><input id="ex" type="range" min="1" max="3" step="0.1" value="1.5"></div>
+  <div class="prm"><label>Calidad del motor</label><select id="quality"><option value="1">Alta · grilla 60 m</option><option value="2">Rápida · grilla 120 m</option></select></div>
+  <h4>Sensores virtuales</h4>
+  <div class="gauges" id="gauges"></div>
+  <figure class="ch"><figcaption>Hidrograma <span id="gName">profundidad del flujo (m)</span></figcaption><canvas id="cGauge"></canvas></figure>
+</aside>
+
+<div class="nav" id="nav">
+  <button id="compass" title="Norte arriba" aria-label="Norte arriba"><svg viewBox="0 0 40 40"><g id="rose"><path d="M20 4 L25 20 L20 17 L15 20 Z" fill="#ff5a3c"/><path d="M20 36 L15 20 L20 23 L25 20 Z" fill="#d8dde2"/><text x="20" y="12" text-anchor="middle" font-size="7" fill="#fff" font-weight="700">N</text></g></svg></button>
+  <button id="zin" title="Acercar">+</button><button id="zout" title="Alejar">−</button><button id="tilt" title="Vista 2D / 3D">3D</button><button id="home" title="Vista general">⌂</button>
+  <div class="views" id="views"></div>
+</div>
+
+<div class="timeline" id="timeline">
+  <button id="play" class="play" aria-label="Iniciar">▶</button>
+  <button id="reset" title="Reiniciar" aria-label="Reiniciar">↺</button>
+  <div class="track" id="track"><div class="fill" id="tfill"></div><div class="marks" id="tmarks"></div><div class="tip" id="ttip" hidden></div></div>
+  <select id="speed" aria-label="Velocidad">
+    <option value="1">Tiempo real</option><option value="10">×10</option><option value="60">1 min/s</option><option value="300" selected>5 min/s</option><option value="900">15 min/s</option><option value="3600">1 h/s</option><option value="1e9">Máximo</option>
+  </select>
+  <span class="rate" id="rate">—</span>
+</div>
+
+<div class="status" id="status"><span id="sLL">—</span><span id="sZ">—</span><span id="sAlt">—</span><span class="scale"><i id="scaleBar"></i><b id="scaleTxt"></b></span><span id="sPerf">—</span></div>
+<div class="probe" id="probe" hidden></div>
+<div class="toasts" id="toasts"></div>
+<button class="panelbtn l" id="tglL" aria-label="Panel izquierdo">☰</button>
+<button class="panelbtn r" id="tglR" aria-label="Capas">◧</button>
+<div class="loading" id="loading"><div><div class="spin"></div><b>LLAIMA 3D</b><span id="loadtxt">Iniciando…</span><div class="lbar"><i id="lbar"></i></div></div></div>
+<p class="attr">Relieve Copernicus GLO-30 © DLR/Airbus · Sentinel-2 cloudless (EOX, Copernicus) · © colaboradores de OpenStreetMap · three.js</p>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
