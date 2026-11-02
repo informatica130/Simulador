@@ -64,7 +64,8 @@ precision highp float;
 varying vec2 vUv; varying vec4 vCol; varying float vGlow; varying vec3 vWp; varying float vSeed;
 void main(){
   vec2 p = vUv * 2.0 - 1.0; float r = dot(p, p);
-  float a = exp(-r * 5.0) + 0.25 * exp(-r * 1.4);
+  if (r > 1.0) discard;
+  float a = (exp(-r * 5.0) + 0.25 * exp(-r * 1.4)) * (1.0 - smoothstep(0.6, 1.0, r));
   gl_FragColor = vec4(vCol.rgb * vGlow * a, 1.0);
 }`;
 
@@ -109,8 +110,8 @@ class Pool {
 export class FX {
   constructor(scene, hAt) {
     this.hAt = hAt; // altura del terreno en (x km, y km) → m
-    this.smoke = new Pool(22000, SMOKE_FS, THREE.NormalBlending, scene);
-    this.glow = new Pool(14000, GLOW_FS, THREE.AdditiveBlending, scene);
+    this.smoke = new Pool(14000, SMOKE_FS, THREE.NormalBlending, scene);
+    this.glow = new Pool(8000, GLOW_FS, THREE.AdditiveBlending, scene);
     this.smoke.mesh.renderOrder = 5; this.glow.mesh.renderOrder = 6;
     this.ex = 1.5; this.acc = {}; this.events = [];
     // rayos

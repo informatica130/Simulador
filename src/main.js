@@ -32,9 +32,9 @@ const S = {
   scen: params.get('esc') && SCENARIOS[params.get('esc')] ? params.get('esc') : 'e2008',
   mult: 0, emult: 0, T0: 1420, fumQ: 1.6, rh: 0, month: 0, hour: 18, wto: 100, wsp: 22, rain: 0, rainS: 2, melt: 1, erode: true,
   ventMode: 'scen', customVents: null, fisA: null,
-  playing: false, speed: 300, quality: +(params.get('q') || (mobile ? 2 : 1)), overlay: 0, base: 0, ex: 1.5, probCh: 0,
-  show: { roads: true, rivers: false, blds: true, labels: true, fx: true, trees: true, shadows: true, contours: false, snow: true, sound: false },
-  gaugeSel: 0, probe: null, runTo: null, maxSteps: 30, capSteps: +(params.get('steps') || 0),
+  playing: false, speed: 300, quality: +(params.get('q') || 2), lite: params.get('lite') === '1' || mobile, overlay: 0, base: 0, ex: 1.5, probCh: 0,
+  show: { daylight: false, roads: true, rivers: false, blds: true, labels: true, fx: true, arrows: true, trees: !(params.get('lite') === '1' || mobile), shadows: true, contours: false, snow: true, sound: false },
+  gaugeSel: 0, probe: null, follow: null, pr: 1, runTo: null, maxSteps: 30, capSteps: +(params.get('steps') || 0),
 };
 
 const setLoad = (t, f) => { $('loadtxt').textContent = t; if (f != null) $('lbar').style.width = (f * 100) + '%'; };
@@ -57,7 +57,8 @@ async function boot() {
   if (!renderer.capabilities.isWebGL2) return fail('Este navegador no soporta WebGL2. Usa Chrome, Edge, Firefox o Safari recientes.');
   const gl = renderer.getContext();
   if (!gl.getExtension('EXT_color_buffer_float')) return fail('La GPU no permite render a texturas float (EXT_color_buffer_float), necesario para el motor físico.');
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, mobile ? 1.25 : 1.75));
+  S.prMax = Math.min(devicePixelRatio || 1, S.lite ? 1 : 1.5); S.pr = Math.min(S.prMax, 1.25);
+  renderer.setPixelRatio(S.pr);
   renderer.setSize(innerWidth, innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.6;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -83,14 +84,14 @@ async function boot() {
   }
   sol = new Solver(renderer, D, { scale: S.quality });
   run = new Runner(sol, D, { spinHours: +(params.get('spin') ?? 1.5) });
-  terr = createTerrain(D, sol, satTex, { step: +(params.get('m') || (mobile ? 4 : S.quality === 1 ? 2 : 2)), satHi, hiBounds: [-13, 15, -21, 13] });
+  terr = createTerrain(D, sol, satTex, { step: +(params.get('m') || (S.lite ? 4 : 2)), satHi, hiBounds: [-13, 15, -21, 13] });
   scene.add(terr.mesh); scene.add(terr.fluid);
   ovl = createOverlays(D, sol, hAt, terr.shared); scene.add(ovl.group);
   fx = new FX(scene, hAt);
-  forest = new Forest(scene, D, sol, hAt, terr.shared, mobile ? 12000 : 70000);
+  forest = new Forest(scene, D, sol, hAt, terr.shared, S.lite ? 8000 : 28000);
   labels = new Labels($('labels'), camera, hAt, () => S.ex);
   // post-proceso
-  const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: mobile ? 0 : 4 });
+  const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: S.lite ? 0 : 2 });
   composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(scene, camera));
   bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), 0.6, 0.5, 2.4); composer.addPass(bloom);
@@ -203,8 +204,10 @@ function simDate(t) {
 const sunDir = new THREE.Vector3(), tmpC = new THREE.Color();
 let NIGHT = 0; const NIGHT_BG = new THREE.Color(0.004, 0.006, 0.012);
 function updateLighting() {
-  const { ms } = simDate(run.t);
-  const sp = sunPosition(ms, D.GR.LAT0, D.GR.LON0);
+  const { ms, off } = simDate(run.t);
+  // «Siempre de día»: mantiene la fecha real pero fija la hora solar a media mañana para ver bien los flujos
+  const msL = S.show.daylight ? ms - (((ms / 3600000 + off) % 24 + 24) % 24 - 10.5) * 3600000 : ms;
+  const sp = sunPosition(msL, D.GR.LAT0, D.GR.LON0);
   const el = sp.el, az = sp.az * Math.PI / 180, e = el * Math.PI / 180;
   const dir = new THREE.Vector3(Math.sin(az) * Math.cos(e), Math.sin(e), -Math.cos(az) * Math.cos(e));
   sky.material.uniforms.sunPosition.value.copy(dir);
@@ -215,7 +218,7 @@ function updateLighting() {
   sh.uSunDir.value.copy(sunDir);
   const warm = ss(0, 22, el);
   sh.uSunCol.value.setRGB(1.0, 0.55 + 0.4 * warm, 0.32 + 0.56 * warm).multiplyScalar(1.9 * ss(-1.5, 5, el));
-  sh.uSkyCol.value.setRGB(0.012 + 0.30 * day, 0.016 + 0.38 * day, 0.03 + 0.52 * day);
+  sh.uSkyCol.value.setRGB(0.045 + 0.27 * day, 0.055 + 0.34 * day, 0.085 + 0.47 * day);   // de noche: luz de luna y cielo
   sh.uGroundCol.value.setRGB(0.06, 0.055, 0.045).multiplyScalar(day);
   const sunset = (1 - warm) * day;
   sh.uFogCol.value.setRGB(0.012 + 0.55 * day + 0.2 * sunset, 0.016 + 0.64 * day + 0.03 * sunset, 0.03 + 0.76 * day - 0.15 * sunset);
@@ -309,9 +312,12 @@ function buildUI() {
   $('ex').addEventListener('input', () => { S.ex = +$('ex').value; $('o_ex').textContent = F.ex(S.ex); setEx(); });
   $('o_ex').textContent = F.ex(S.ex);
   $('yrs').addEventListener('input', () => { $('o_yrs').textContent = F.yrs(+$('yrs').value); recurrence(); }); $('o_yrs').textContent = F.yrs(10);
-  const qv = (params.get('m') === '1' ? 'u' : '') + S.quality;
-  $('quality').value = ['u1', '1', '2'].includes(qv) ? qv : String(S.quality);
-  $('quality').addEventListener('change', () => { const v = $('quality').value, u = new URL(location.href); u.searchParams.set('q', v.replace('u', '')); if (v === 'u1') u.searchParams.set('m', '1'); else u.searchParams.delete('m'); u.searchParams.set('esc', S.scen); location.href = u.toString(); });
+  const qv = params.get('lite') === '1' ? 'l' : (params.get('m') === '1' ? 'u' : '') + S.quality;
+  $('quality').value = ['u1', '1', '2', 'l'].includes(qv) ? qv : '2';
+  $('quality').addEventListener('change', () => { const v = $('quality').value, u = new URL(location.href);
+    u.searchParams.delete('m'); u.searchParams.delete('lite');
+    if (v === 'l') { u.searchParams.set('q', '2'); u.searchParams.set('lite', '1'); } else { u.searchParams.set('q', v.replace('u', '')); if (v === 'u1') u.searchParams.set('m', '1'); }
+    u.searchParams.set('esc', S.scen); location.href = u.toString(); });
   // pestañas
   document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => { document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b)); document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 'tab-' + b.dataset.tab)); updateUI(true); if (b.dataset.tab === 'hist') histChart($('cHist'), CATALOG); if (b.dataset.tab === 'prob') recurrence(); });
   // boca
@@ -325,14 +331,16 @@ function buildUI() {
   document.querySelectorAll('#baseSel button').forEach(b => b.onclick = () => { document.querySelectorAll('#baseSel button').forEach(x => x.classList.toggle('on', x === b)); S.base = +b.dataset.b; terr.U.uBase.value = S.base; });
   document.querySelectorAll('#ovSel button').forEach(b => b.onclick = () => setOverlay(+b.dataset.o));
   document.querySelectorAll('#probCh button').forEach(b => b.onclick = () => { document.querySelectorAll('#probCh button').forEach(x => x.classList.toggle('on', x === b)); S.probCh = +b.dataset.c; terr.U.uProbCh.value = S.probCh; if (S.overlay !== 6) setOverlay(6); else legend(); });
-  const TG = [['roads', 'Caminos'], ['rivers', 'Ríos'], ['blds', 'Edificios'], ['labels', 'Etiquetas'], ['fx', 'Partículas'], ['trees', 'Bosque 3D'], ['shadows', 'Sombras'], ['contours', 'Curvas de nivel'], ['snow', 'Nieve y glaciar'], ['sound', 'Sonido']];
+  const TG = [['roads', 'Caminos'], ['rivers', 'Ríos'], ['blds', 'Edificios'], ['labels', 'Etiquetas'], ['daylight', 'Siempre de día'], ['fx', 'Partículas'], ['arrows', 'Flechas y etiquetas de flujo'], ['trees', 'Bosque 3D'], ['shadows', 'Sombras'], ['contours', 'Curvas de nivel'], ['snow', 'Nieve y glaciar'], ['sound', 'Sonido']];
   for (const [k, t] of TG) { const l = document.createElement('label'); l.innerHTML = `<input type="checkbox" ${S.show[k] ? 'checked' : ''}> ${t}`; l.querySelector('input').onchange = e => { S.show[k] = e.target.checked; applyShow(); }; $('toggles').appendChild(l); }
   applyShow();
   // sensores
   gaugePts.forEach((g, i) => { const b = document.createElement('button'); b.innerHTML = `<span>${g.name}</span><i>—</i><small>sin flujo</small>`; b.onclick = () => { S.gaugeSel = i; flyTo(g.x, g.y, 2.2, 0.9); updateUI(true); }; $('gauges').appendChild(b); });
   // vistas
   const V = [['general', 'General'], ['meli', 'Melipeuco'], ['crater', 'Cráter'], ['truful', 'Truful-Truful'], ['cong', 'Conguillío'], ['capt', 'Captrén'], ['oeste', 'Ladera oeste']];
-  for (const [k, t] of V) { const b = document.createElement('button'); b.textContent = t; b.onclick = () => goView(k); $('views').appendChild(b); }
+  for (const [k, t] of V) { const b = document.createElement('button'); b.textContent = t; b.onclick = () => { S.follow = null; goView(k); }; $('views').appendChild(b); }
+  for (const [k, t] of [['lahar', '▶ Seguir el lahar'], ['lava', '▶ Seguir la lava'], ['pdc', '▶ Seguir la CDP']]) { const b = document.createElement('button'); b.textContent = t; b.className = 'follow';
+    b.onclick = () => { S.follow = k; const f = run.sum && run.sum.spots && run.sum.spots.fronts[k][0]; if (f) flyTo(f.x, f.y, 3.2, 0.95); else toast('Todavía no hay ' + (k === 'lahar' ? 'lahar' : k === 'lava' ? 'lava' : 'corriente piroclástica') + ' en movimiento'); }; $('views').appendChild(b); }
   $('home').onclick = () => goView('general');
   $('zin').onclick = () => dolly(0.6); $('zout').onclick = () => dolly(1.6);
   $('tilt').onclick = () => { const sph = new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target)); sph.phi = sph.phi > 0.3 ? 0.02 : 0.95; $('tilt').textContent = sph.phi < 0.3 ? '2D' : '3D'; animateCam(controls.target.clone(), controls.target.clone().add(new THREE.Vector3().setFromSpherical(sph))); };
@@ -366,7 +374,8 @@ function syncControls() {
 function applyShow() {
   ovl.roads.visible = S.show.roads; ovl.rivers.visible = S.show.rivers; ovl.blds.visible = S.show.blds;
   if (S.show.sound) snd.enable(); else snd.disable();
-  fx.smoke.mesh.visible = fx.glow.mesh.visible = S.show.fx; forest.visible = S.show.trees; terr.U.uShadows.value = S.show.shadows ? 1 : 0; terr.U.uContours.value = S.show.contours ? 1 : 0; terr.U.uSnowVis.value = S.show.snow ? 1 : 0;
+  fx.smoke.mesh.visible = fx.glow.mesh.visible = S.show.fx; forest.visible = S.show.trees; terr.FU.uArrows.value = S.show.arrows ? 1 : 0;
+  if (!S.show.arrows) flowLabels.forEach(l => l.hidden = true); terr.U.uShadows.value = S.show.shadows ? 1 : 0; terr.U.uContours.value = S.show.contours ? 1 : 0; terr.U.uSnowVis.value = S.show.snow ? 1 : 0;
 }
 function setEx() {
   terr.shared.uEx.value = S.ex; ovl.setRiverEx(S.ex); ovl.setVents(src.vents, S.ex);
@@ -536,7 +545,7 @@ function pickTerrain(cx, cy) {
 }
 function setupInput() {
   const cv = renderer.domElement; let down = null;
-  cv.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+  cv.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; S.follow = null; });
   cv.addEventListener('pointerup', e => {
     if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5 || e.button !== 0) return;
     const p = pickTerrain(e.clientX, e.clientY); if (!p) return;
@@ -601,6 +610,36 @@ function showProbe(x, y, live) {
   };
 }
 
+// ------------------------------------------------------------------ etiquetas de los frentes en movimiento
+const flowLabels = [];
+function updateFronts() {
+  if (!flowLabels.length) for (let i = 0; i < 7; i++) { const it = labels.add('', 0, 0, 'flow', 3, 0); it.noOcc = true; it.hidden = true; flowLabels.push(it); }
+  const fr = run.sum && run.sum.spots && run.sum.spots.fronts;
+  const kmh = u => Math.round(u * 3.6);
+  const list = [];
+  if (fr && S.show.arrows) {
+    for (const f of fr.lahar) list.push({ f, cls: 'lahar', t: `Lahar · ${f.h.toFixed(1)} m${f.u > 0.3 ? ' · ' + kmh(f.u) + ' km/h' : ''} · ${f.d.toFixed(1)} km` });
+    for (const f of fr.lava) list.push({ f, cls: 'lava', t: `Lava · ${(f.T - 273).toFixed(0)} °C · ${f.d.toFixed(1)} km` });
+    for (const f of fr.pdc) list.push({ f, cls: 'pdc', t: `Corriente piroclástica${f.u > 1 ? ' · ' + kmh(f.u) + ' km/h' : ''} · ${f.d.toFixed(1)} km` });
+  }
+  flowLabels.forEach((it, i) => {
+    const L = list[i]; if (!L) { it.hidden = true; return; }
+    it.hidden = false; it.x = L.f.x; it.y = L.f.y; it.z = hAt(L.f.x, L.f.y) + 80;
+    it.d.textContent = L.t; it.d.className = 'lbl flow ' + L.cls;
+  });
+  // sensores: estado en vivo sobre el mapa
+  if (smp) { const g0 = idx.g[0]; gaugePts.forEach((g, i) => { if (!g.lbl) return; const v = smp[g0 + i]; if (!v) return;
+    const ex = v.fluid[0] - v.base[0]; g.lbl.x = g.x; g.lbl.y = g.y;
+    const alarm = ex > 0.3 || v.fluid[2] > 0.1 || v.fluidP[0] > 0.1;
+    g.lbl.d.textContent = '◆ ' + g.name + (v.fluid[2] > 0.1 ? ` · LAVA ${v.fluid[2].toFixed(1)} m` : v.fluidP[0] > 0.1 ? ' · CDP' : ex > 0.1 ? ` · +${ex.toFixed(1)} m` : '');
+    g.lbl.d.classList.toggle('alarm', alarm); }); }
+  // seguimiento de cámara del frente elegido
+  if (S.follow && fr && fr[S.follow] && fr[S.follow][0] && !camAnim) {
+    const f = fr[S.follow][0]; const T = new THREE.Vector3(f.x, hAt(f.x, f.y) / 1000 * S.ex, -f.y);
+    animateCam(T, T.clone().add(camera.position.clone().sub(controls.target)), 0.9);
+  }
+}
+
 // ------------------------------------------------------------------ etiquetas y búsqueda
 function buildLabels() {
   const seen = new Set();
@@ -611,7 +650,7 @@ function buildLabels() {
   add('Pichillaima', VENTS.pichi.x, VENTS.pichi.y, 'peak', 2, 40);
   for (const [x, y, n] of D.osm.rivernames) add(n, x, y, 'river', 1, 10);
   for (const p of D.osm.pois) { const [x, y, t, n] = p; if (['school', 'clinic', 'hospital', 'fire_station', 'police'].includes(t) && n) add(n, x, y, 'poi', 1, 15); }
-  gaugePts.forEach(g => add('◆ ' + g.name, g.x, g.y, 'gauge', 2, 40));
+  gaugePts.forEach(g => { g.lbl = labels.add('◆ ' + g.name, g.x, g.y, 'gauge', 2, 40); });
 }
 function norm(s) { return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); }
 function buildSearch() {
@@ -639,7 +678,7 @@ function updateStatus(fps) {
   $('scaleBar').style.width = (n / mpp) + 'px'; $('scaleTxt').textContent = n >= 1000 ? (n / 1000) + ' km' : n + ' m';
   const g = hAt(camera.position.x, -camera.position.z);
   $('sAlt').textContent = `cámara ${(camera.position.y / S.ex * 1000).toFixed(0)} m s.n.m. (${((camera.position.y / S.ex * 1000) - g).toFixed(0)} m sobre el suelo)`;
-  $('sPerf').textContent = `${fps.toFixed(0)} fps · relieve 30 m · motor ${S.quality === 1 ? '60' : '120'} m (${sol.nx}×${sol.ny})`;
+  $('sPerf').textContent = `${fps.toFixed(0)} fps · resolución ${Math.round(S.pr * 100)} % · relieve 30 m · motor ${S.quality === 1 ? '60' : '120'} m`;
 }
 function onResize() {
   renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight); bloom.resolution.set(innerWidth / 2, innerHeight / 2);
@@ -664,6 +703,14 @@ function fxWarm(sec) {
   const fum = fumState();
   for (let t = 0; t < sec; t += 0.5) fx.update(0.5, { src: st, plume: P, vents: src.vents, wind: src.wind, phreatic: S.scen === 'freatica', fumarole: st.active ? 2.5 : 1, fum });
 }
+let drT = 0;
+function dynRes(now) {
+  if (now - drT < 1500) return; drT = now;
+  let pr = S.pr;
+  if (fpsS < 26 && pr > 0.6) pr = Math.max(0.6, pr - 0.15);
+  else if (fpsS > 50 && pr < S.prMax) pr = Math.min(S.prMax, pr + 0.1);
+  if (Math.abs(pr - S.pr) > 0.01) { S.pr = pr; renderer.setPixelRatio(pr); composer.setPixelRatio(pr); onResize(); }
+}
 // ------------------------------------------------------------------ bucle principal
 let last = 0, fpsS = 60, simRateS = 0, lastStat = 0;
 function frame(now) {
@@ -684,7 +731,7 @@ function frame(now) {
   }
   simRateS = simRateS * 0.9 + (simAdv / Math.max(dtr, 1e-3)) * 0.1;
   if (ens && ens.active) ens.tick(S.playing ? 25 : 90);
-  if (now - lastRead > (S.playing ? 220 : 600)) { lastRead = now; readback(false); }
+  if (now - lastRead > (S.playing ? 450 : 900)) { lastRead = now; readback(false); updateFronts(); }
   // render
   stepCam();
   terr.bind(sol); ovl.bind(sol); forest.bind(sol);
@@ -692,6 +739,8 @@ function frame(now) {
     forest.update(gx, gy, Math.max(alt, camera.position.distanceTo(controls.target) * 1000 * 0.6)); }
   const sh = terr.shared; sh.uTime.value = now / 1000; sh.uCamPos.value.copy(camera.position); terr.U.uSimT.value = run.t;
   updateLighting();
+  if (S.show.shadows) terr.updateShadows(renderer);
+  terr.FU.uFlowVis.value = clamp(Math.sqrt(Math.max(1, S.playing ? simRateS : 1)) * 1.5, 2, 30);
   const st = run.cur ? run.cur.state : null;
   updateGlow(st);
   if (S.show.fx) {
@@ -714,5 +763,7 @@ function frame(now) {
   }
   composer.render();
   updateUI(false);
+  // resolución dinámica: mantiene la fluidez bajando la densidad de píxeles cuando cae el cuadro por segundo
+  dynRes(now);
   if (now - lastStat > 250) { lastStat = now; updateStatus(fpsS); $('rate').textContent = S.playing ? `${simRateS >= 60 ? (simRateS / 60).toFixed(1) + ' min' : simRateS.toFixed(1) + ' s'} sim/s` : 'en pausa'; }
 }

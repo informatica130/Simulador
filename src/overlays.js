@@ -119,14 +119,15 @@ export class Labels {
     const cam = this.cam, ex = this.ex(), cp = cam.position;
     const alt = cp.y / ex * 1000;
     for (const it of this.items) {
-      if (!show) { if (it.vis) { it.d.style.display = 'none'; it.vis = false; } continue; }
+      if (!show || it.hidden) { if (it.vis) { it.d.style.display = 'none'; it.vis = false; } continue; }
       this.v.set(it.x, it.z / 1000 * ex, -it.y);
       const dist = this.v.distanceTo(cp);
       const maxD = it.pri === 3 ? 400 : it.pri === 2 ? 60 + alt / 300 : 18 + alt / 900;
       this.v.project(cam);
       const on = this.v.z < 1 && Math.abs(this.v.x) < 1.05 && Math.abs(this.v.y) < 1.05 && dist < maxD;
       // oclusión por el relieve (cada pocos cuadros)
-      if (on && (this.tick + it.pri) % 6 === 0) {
+      if (it.noOcc) it.occ = false;
+      else if (on && (this.tick + it.pri) % 6 === 0) {
         let occ = false; const n = 14;
         for (let k = 1; k < n; k++) { const f = k / n; const x = cp.x + (it.x - cp.x) * f, yw = cp.z + (-it.y - cp.z) * f, yy = cp.y + (it.z / 1000 * ex - cp.y) * f;
           if (this.hAt(x, -yw) / 1000 * ex > yy + 0.01) { occ = true; break; } }

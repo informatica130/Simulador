@@ -98,7 +98,7 @@ void main(){
 
 const TERRAIN_FS = /* glsl */`
 precision highp float; precision highp int; precision highp sampler2D;
-uniform sampler2D tSat, tSatHi, tH30, tDet, tHf; uniform ivec2 uN30; uniform vec4 uGrid; uniform vec4 uSatB; uniform vec4 uHiB; uniform float uHiOn;
+uniform sampler2D tSat, tSatHi, tH30, tDet, tHf, tShadow; uniform ivec2 uN30; uniform vec4 uGrid; uniform vec4 uSatB; uniform vec4 uHiB; uniform float uHiOn;
 uniform float uEx; uniform int uBase; uniform int uOverlay; uniform float uAccCount; uniform float uSimT;
 uniform float uShadows; uniform float uContours; uniform float uSnowVis; uniform float uNight;
 varying vec3 vW; varying vec2 vXY; varying float vZ; varying vec2 vDG; varying vec3 vNv;
@@ -213,7 +213,8 @@ void main(){
   float burn = vB.x, scorch = vB.y;
   alb = mix(alb, vec3(0.035, 0.03, 0.028) * (0.7 + 0.6 * n2), scorch * 0.9);
   // --- iluminación
-  float sh = uShadows > 0.5 ? shadow(vW + vec3(0.0, 0.004 + 0.002 * min(dist, 20.0) / 20.0, 0.0) + N * 0.006, uSunDir) : 1.0;
+  // sombra del relieve precalculada (se recalcula sólo cuando el sol se mueve)
+  float sh = uShadows > 0.5 ? texture2D(tShadow, u30).r : 1.0;
   vec3 L = uSunDir; vec3 V = normalize(uCamPos - vW);
   float ndl = max(dot(N, L), 0.0);
   // luz del cielo con oclusión y luz rebotada del terreno
@@ -259,21 +260,29 @@ void main(){
 const FLUID_VS = /* glsl */`
 precision highp float; precision highp int; precision highp sampler2D;
 attribute vec2 aIJ;
-uniform sampler2D tTerr, tFluid, tFluidP, tFluxA, tBase; uniform ivec2 uSimN; uniform float uEx; uniform float uDxM;
-varying vec3 vW; varying vec4 vF; varying vec2 vVel; varying vec2 vXY; varying float vHp; varying vec3 vN; varying float vSpd; varying float vEx;
+uniform sampler2D tTerr, tFluid, tFluidP, tFluxA, tFluxB, tBase; uniform ivec2 uSimN; uniform float uEx; uniform float uDxM; uniform float uArrows;
+varying vec3 vW; varying vec4 vF; varying vec2 vVel; varying vec2 vXY; varying float vHp; varying vec3 vN; varying float vSpd; varying float vEx; flat varying float vKind;
 vec4 fl(ivec2 p){ return texelFetch(tFluid, clamp(p, ivec2(0), uSimN - 1), 0); }
-float surf(ivec2 p){ p = clamp(p, ivec2(0), uSimN - 1); vec4 f = texelFetch(tFluid, p, 0); return texelFetch(tTerr, p, 0).r + f.x + f.z + texelFetch(tFluidP, p, 0).x * 0.3; }
+float hp_(ivec2 p){ return texelFetch(tFluidP, clamp(p, ivec2(0), uSimN - 1), 0).x; }
+float dep(ivec2 p){ vec4 f = fl(p); return f.x + f.z + hp_(p) * 0.6; }
+float surf(ivec2 p){ p = clamp(p, ivec2(0), uSimN - 1); return texelFetch(tTerr, p, 0).r + dep(p); }
 void main(){
   ivec2 p = ivec2(aIJ);
-  vec4 f = fl(p); float bed = texelFetch(tTerr, p, 0).r; float hp = texelFetch(tFluidP, p, 0).x;
-  // profundidad máxima entre vecinos para que las orillas se intersecten con el terreno
-  float h = f.x + f.z;
-  float hn = max(max(fl(p + ivec2(1, 0)).x + fl(p + ivec2(1, 0)).z, fl(p - ivec2(1, 0)).x + fl(p - ivec2(1, 0)).z), max(fl(p + ivec2(0, 1)).x + fl(p + ivec2(0, 1)).z, fl(p - ivec2(0, 1)).x + fl(p - ivec2(0, 1)).z));
-  float y = h > 0.02 ? bed + h + 0.6 : bed - (hn > 0.0 ? 0.3 : 4.0);
+  vec4 f = fl(p); float bed = texelFetch(tTerr, p, 0).r; float hp = hp_(p);
+  float h = dep(p);
+  float hn = max(max(dep(p + ivec2(1, 0)), dep(p - ivec2(1, 0))), max(dep(p + ivec2(0, 1)), dep(p - ivec2(0, 1))));
+  // vista lejana: los flujos se elevan un poco para no quedar ocultos por el relieve más fino
+  float camD = length(cameraPosition - vec3(position.x, bed / 1000.0 * uEx, position.z));
+  float lift = uArrows * clamp((camD - 3.0) * 1.2, 0.0, 30.0);
+  float y = h > 0.02 ? bed + h + 0.6 + lift : bed - (hn > 0.0 ? 0.3 : 4.0);
   vec4 q = texelFetch(tFluxA, p, 0), qW = texelFetch(tFluxA, clamp(p - ivec2(1, 0), ivec2(0), uSimN - 1), 0), qN = texelFetch(tFluxA, clamp(p - ivec2(0, 1), ivec2(0), uSimN - 1), 0);
+  vec4 b = texelFetch(tFluxB, p, 0), bW = texelFetch(tFluxB, clamp(p - ivec2(1, 0), ivec2(0), uSimN - 1), 0), bN = texelFetch(tFluxB, clamp(p - ivec2(0, 1), ivec2(0), uSimN - 1), 0);
   vec2 vm = vec2(0.5 * (qW.x + q.x), -0.5 * (qN.y + q.y)) / max(f.x, 0.05);
   vec2 vl = vec2(0.5 * (qW.z + q.z), -0.5 * (qN.w + q.w)) / max(f.z, 0.05);
-  vVel = f.z > f.x ? vl : vm; vSpd = length(vVel);
+  vec2 vp = vec2(0.5 * (bW.x + b.x), -0.5 * (bN.y + b.y)) / max(hp, 0.05);
+  // tipo: 0 agua/lahar, 1 lava, 2 corriente piroclástica
+  vKind = (f.z > 0.03 && f.z >= f.x * 0.5) ? 1.0 : (hp > 0.05 && hp > f.x) ? 2.0 : 0.0;
+  vVel = vKind == 1.0 ? vl : vKind == 2.0 ? vp : vm; vSpd = length(vVel);
   float sx = surf(p + ivec2(1, 0)) - surf(p - ivec2(1, 0)), sy = surf(p + ivec2(0, 1)) - surf(p - ivec2(0, 1));
   vN = normalize(vec3(-sx / 1000.0 * uEx / (2.0 * uDxM / 1000.0), 1.0, -sy / 1000.0 * uEx / (2.0 * uDxM / 1000.0)));
   vF = f; vHp = hp; vEx = f.x - texelFetch(tBase, p, 0).r;
@@ -284,55 +293,68 @@ void main(){
 
 const FLUID_FS = /* glsl */`
 precision highp float;
-varying vec3 vW; varying vec4 vF; varying vec2 vVel; varying vec2 vXY; varying float vHp; varying vec3 vN; varying float vSpd; varying float vEx;
-uniform float uLavaGain;
+varying vec3 vW; varying vec4 vF; varying vec2 vVel; varying vec2 vXY; varying float vHp; varying vec3 vN; varying float vSpd; varying float vEx; flat varying float vKind;
+uniform float uLavaGain; uniform float uArrows; uniform float uFlowVis;
 ` + COMMON_GLSL + /* glsl */`
-// textura advectada por el flujo (dos fases para evitar estiramiento)
 float flowTex(vec2 xy, vec2 vel, float scale, float speed){
   float ph = uTime * speed; float a = fract(ph), b = fract(ph + 0.5);
-  vec2 v = vel * 0.001; // m/s → km/s
-  float k = 3.0;
-  float n1 = fbm((xy - v * a * k * 60.0) * scale), n2 = fbm((xy - v * b * k * 60.0) * scale + 17.3);
-  float w = abs(1.0 - 2.0 * a);
-  return mix(n1, n2, 1.0 - w);
+  vec2 v = vel * 0.001;
+  float n1 = fbm((xy - v * a * 180.0) * scale), n2 = fbm((xy - v * b * 180.0) * scale + 17.3);
+  return mix(n1, n2, 1.0 - abs(1.0 - 2.0 * a));
+}
+// Flechas (chevrones) que avanzan en la dirección y con la rapidez del flujo
+float chevrons(vec2 xy, vec2 vel, float spacing, float t){
+  float sp = length(vel); if (sp < 0.08) return 0.0;
+  vec2 d = vel / sp, n = vec2(-d.y, d.x);
+  float a = dot(xy, d) / spacing, c = dot(xy, n) / spacing;
+  float row = floor(c), cc = fract(c) - 0.5;
+  float move = t * clamp(sp, 0.3, 25.0) * 0.001 / spacing * uFlowVis;
+  float aa = fract(a - move + h21(vec2(row, 3.1)) * 0.6);
+  float line = abs(aa - 0.62 + abs(cc) * 0.75);
+  return (1.0 - smoothstep(0.045, 0.11, line)) * (1.0 - smoothstep(0.30, 0.40, abs(cc)));
 }
 void main(){
   float hm = vF.x, cv = vF.y, hl = vF.z, T = vF.w;
-  bool lava = hl > 0.03 && hl >= hm * 0.5;
-  if (!lava && hm < 0.03) discard;
+  bool lava = vKind == 1.0, pdc = vKind == 2.0;
+  if (!lava && !pdc && hm < 0.03) discard;
+  float dist = length(uCamPos - vW);
   vec3 V = normalize(uCamPos - vW);
   vec3 col; float alpha = 1.0;
+  bool lahar = !lava && !pdc && (vEx > 0.12 || cv > 0.05);
   if (lava) {
     float n = flowTex(vXY, vVel, 70.0, 0.05);
     float crk = 1.0 - smoothstep(0.015, 0.07, abs(n - 0.5));
     float crk2 = 1.0 - smoothstep(0.01, 0.05, abs(fbm(vXY * 240.0 + n) - 0.5));
     float mob = clamp(vSpd / 1.2, 0.0, 1.0);
-    float Tcore = T, Tcrust = 278.0 + (T - 278.0) * mix(0.42, 0.62, mob);
+    float Tcrust = 278.0 + (T - 278.0) * mix(0.42, 0.62, mob);
     float open = clamp(crk * (0.55 + 0.45 * mob) + crk2 * 0.35 + smoothstep(0.75, 0.95, mob) * 0.4, 0.0, 1.0);
-    float Ts = mix(Tcrust, Tcore, open);
+    float Ts = mix(Tcrust, T, open);
     vec3 em = blackbody(Ts) * bbRad(Ts) * uLavaGain;
     vec3 N = normalize(vN + vec3(n - 0.5, 0.0, fbm(vXY * 150.0) - 0.5) * 0.6);
-    float ndl = max(dot(N, uSunDir), 0.0);
     vec3 rock = vec3(0.05, 0.045, 0.042) * (0.6 + 0.8 * vnoise(vXY * 300.0));
-    col = rock * (uSunCol * ndl + uSkyCol * 0.6) + em;
-    col += glowLight(vW, N) * rock * 2.0;
+    col = rock * (uSunCol * max(dot(N, uSunDir), 0.0) + uSkyCol * 0.6) + em + glowLight(vW, N) * rock * 2.0;
     alpha = smoothstep(0.02, 0.25, hl);
+  } else if (pdc) {
+    float n = flowTex(vXY, vVel, 90.0, 0.4);
+    vec3 N = normalize(vN + vec3(n - 0.5, 0.0, n - 0.5) * 0.5);
+    vec3 ash = vec3(0.40, 0.37, 0.36) * (0.8 + 0.4 * n);
+    col = ash * (uSunCol * (0.4 + 0.6 * max(dot(N, uSunDir), 0.0)) + uSkyCol);
+    col += vec3(1.0, 0.4, 0.1) * 0.15 * smoothstep(600.0, 900.0, T) * n;
+    alpha = smoothstep(0.05, 0.6, vHp) * 0.9;
   } else {
     float spd = vSpd;
     float n = flowTex(vXY, vVel, 120.0, 0.25 + spd * 0.05);
     float nb = flowTex(vXY * 1.7, vVel, 260.0, 0.4 + spd * 0.06);
     vec3 N = normalize(vN + vec3(n - 0.5, 0.0, nb - 0.5) * (0.12 + 0.05 * min(spd, 12.0)));
     vec3 mud = mix(vec3(0.34, 0.26, 0.17), vec3(0.24, 0.21, 0.18), smoothstep(0.2, 0.55, cv));
-    // agua de río limpia (glacial, verde-azulada) → turbia → barro, según la concentración de sedimento
     float clean = 1.0 - smoothstep(0.004, 0.06, cv);
     mud = mix(mud, vec3(0.05, 0.11, 0.105), clean);
     mud *= 0.85 + 0.3 * n;
     float foam = smoothstep(0.55, 0.85, nb + n * 0.4) * smoothstep(1.5 + 2.0 * (1.0 - clean), 6.0 + 4.0 * (1.0 - clean), spd) * (1.0 - smoothstep(0.35, 0.55, cv));
     mud = mix(mud, vec3(0.62, 0.56, 0.48), foam * 0.7);
-    float ndl = max(dot(N, uSunDir), 0.0);
     vec3 H = normalize(uSunDir + V);
     float fres = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
-    col = mud * (uSunCol * ndl + uSkyCol * (0.5 + 0.5 * N.y));
+    col = mud * (uSunCol * max(dot(N, uSunDir), 0.0) + uSkyCol * (0.5 + 0.5 * N.y));
     col += uSunCol * pow(max(dot(N, H), 0.0), 140.0) * 0.6 * (1.0 - cv);
     vec3 R = reflect(-V, N);
     vec3 sky = mix(uFogCol, uSkyCol * 1.8, smoothstep(0.0, 0.5, R.y));
@@ -340,8 +362,45 @@ void main(){
     col += mud * glowLight(vW, N);
     alpha = smoothstep(0.03, 0.4, hm) * mix(1.0, 0.85, clean);
   }
+  // --- indicadores: color del fenómeno resaltado desde lejos, borde y flechas de movimiento
+  if (uArrows > 0.5 && (lava || pdc || lahar)) {
+    vec3 kc = lava ? vec3(1.0, 0.55, 0.12) : pdc ? vec3(0.78, 0.52, 1.0) : vec3(1.0, 0.68, 0.22);
+    float far = smoothstep(3.0, 14.0, dist);
+    col = mix(col, kc * (uSunCol * 0.25 + uSkyCol + 0.25), far * 0.55);
+    float depth = lava ? hl : pdc ? vHp : vEx;
+    float edge = 1.0 - smoothstep(0.05, 0.6, depth);
+    col = mix(col, kc * 1.2, edge * 0.5);
+    float spacing = clamp(dist * 0.03, 0.035, 0.9);
+    float ch = chevrons(vXY, vVel, spacing, uTime);
+    col = mix(col, kc * (lava ? 2.2 : 1.6), ch * 0.9);
+    alpha = max(alpha, ch * 0.95);
+    alpha = max(alpha, far * 0.85);
+  }
   col = fogApply(col, vW);
   gl_FragColor = vec4(col, alpha);
+}`;
+
+const SHADOW_VS = /* glsl */`varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+const SHADOW_FS = /* glsl */`
+precision highp float;
+uniform sampler2D tHf; uniform vec4 uGrid; uniform ivec2 uN30; uniform vec3 uSunDir; uniform float uEx;
+varying vec2 vUv;
+float demF(vec2 xy){ vec2 u = vec2(((xy.x - uGrid.x) / uGrid.w + 0.5) / float(uN30.x), ((uGrid.y - xy.y) / uGrid.w + 0.5) / float(uN30.y)); return texture2D(tHf, u).r; }
+void main(){
+  // centro del texel en coordenadas del mundo (km); v = 0 al norte (misma convención que u30 en el terreno)
+  vec2 xy = vec2(uGrid.x + (vUv.x * float(uN30.x) - 0.5) * uGrid.w, uGrid.y - (vUv.y * float(uN30.y) - 0.5) * uGrid.w);
+  vec3 L = uSunDir;
+  if (L.y <= 0.0) { gl_FragColor = vec4(0.0); return; }
+  vec3 p = vec3(xy.x, demF(xy) / 1000.0 * uEx + 0.006, -xy.y);
+  float t = 0.03, res = 1.0;
+  for (int i = 0; i < 64; i++) {
+    vec3 q = p + L * t; float d = q.y - demF(vec2(q.x, -q.z)) / 1000.0 * uEx;
+    if (d < -0.004) { res = 0.0; break; }
+    res = min(res, 12.0 * (d + 0.002) / t);
+    t = t * 1.1 + 0.012;
+    if (t > 45.0 || q.y > 3.3 * uEx) break;
+  }
+  gl_FragColor = vec4(clamp(res, 0.0, 1.0));
 }`;
 
 export function createTerrain(D, solver, satTex, opts = {}) {
@@ -367,6 +426,13 @@ export function createTerrain(D, solver, satTex, opts = {}) {
   // copia en media precisión con filtrado lineal (sombras suaves sin escalones)
   const hh = new Uint16Array(D.N30); for (let k = 0; k < D.N30; k++) hh[k] = THREE.DataUtils.toHalfFloat(D.dem30[k]);
   const hf = new THREE.DataTexture(hh, D.nx30, D.ny30, THREE.RedFormat, THREE.HalfFloatType); hf.minFilter = hf.magFilter = THREE.LinearFilter; hf.needsUpdate = true;
+  // mapa de sombras (RGBA8, filtrado lineal) en la grilla de 30 m
+  const shRT = new THREE.WebGLRenderTarget(D.nx30, D.ny30, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, generateMipmaps: false });
+  const shMat = new THREE.ShaderMaterial({ vertexShader: SHADOW_VS, fragmentShader: SHADOW_FS, depthTest: false, depthWrite: false,
+    uniforms: { tHf: { value: hf }, uGrid: { value: new THREE.Vector4(GR.X0, GR.Y1, GR.cell, D.cell30) }, uN30: { value: new THREE.Vector2(D.nx30, D.ny30) }, uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uEx: { value: 1.5 } } });
+  const shScene = new THREE.Scene(), shCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const shQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), shMat); shQuad.frustumCulled = false; shScene.add(shQuad);
+  const lastSun = new THREE.Vector3(); let lastEx = 0;
   const det = new THREE.DataTexture(D.det30, D.nx30, D.ny30, THREE.RGBAFormat, THREE.UnsignedByteType);
   det.minFilter = THREE.LinearMipmapLinearFilter; det.magFilter = THREE.LinearFilter; det.generateMipmaps = true; det.needsUpdate = true;
   const glowP = [], glowC = []; for (let i = 0; i < 8; i++) { glowP.push(new THREE.Vector4()); glowC.push(new THREE.Vector3()); }
@@ -379,7 +445,7 @@ export function createTerrain(D, solver, satTex, opts = {}) {
   const hiB = opts.hiBounds || [0, 1, 0, 1];
   const U = {
     ...shared,
-    tH30: { value: h30 }, tHf: { value: hf }, tDet: { value: det }, tTerr: { value: null }, tStatic: { value: solver.staticTex }, tStat: { value: null }, tFluidP: { value: null }, tAsh: { value: null }, tFire: { value: null }, tAcc: { value: dummy },
+    tH30: { value: h30 }, tHf: { value: hf }, tShadow: { value: shRT.texture }, tDet: { value: det }, tTerr: { value: null }, tStatic: { value: solver.staticTex }, tStat: { value: null }, tFluidP: { value: null }, tAsh: { value: null }, tFire: { value: null }, tAcc: { value: dummy },
     tSat: { value: satTex }, tSatHi: { value: opts.satHi || satTex }, uHiOn: { value: opts.satHi ? 1 : 0 }, uHiB: { value: new THREE.Vector4(...hiB) },
     uS: { value: solver.s }, uSimN: { value: new THREE.Vector2(solver.nx, solver.ny) }, uN30: { value: new THREE.Vector2(D.nx30, D.ny30) }, uStep: { value: step },
     uAccN: { value: new THREE.Vector2(1, 1) }, uAccS: { value: 1 }, uProbCh: { value: 0 }, uAccCount: { value: 0 },
@@ -395,13 +461,21 @@ export function createTerrain(D, solver, satTex, opts = {}) {
   const fidx = new Uint32Array((fx - 1) * (fy - 1) * 6); p = 0;
   for (let j = 0; j < fy - 1; j++) for (let i = 0; i < fx - 1; i++) { const a = j * fx + i, b = a + 1, c = a + fx, d = c + 1; fidx[p++] = a; fidx[p++] = c; fidx[p++] = b; fidx[p++] = b; fidx[p++] = c; fidx[p++] = d; }
   const fg = new THREE.BufferGeometry(); fg.setIndex(new THREE.BufferAttribute(fidx, 1)); fg.setAttribute('position', new THREE.BufferAttribute(fpos, 3)); fg.setAttribute('aIJ', new THREE.BufferAttribute(fij, 2));
-  const FU = { ...shared, tTerr: { value: null }, tFluid: { value: null }, tFluidP: { value: null }, tFluxA: { value: null }, tBase: { value: solver.baseTex }, uSimN: U.uSimN, uDxM: { value: solver.dx }, uLavaGain: { value: 1 } };
+  const FU = { ...shared, tTerr: { value: null }, tFluid: { value: null }, tFluidP: { value: null }, tFluxA: { value: null }, tFluxB: { value: null }, tBase: { value: solver.baseTex }, uSimN: U.uSimN, uDxM: { value: solver.dx }, uLavaGain: { value: 1 }, uArrows: { value: 1 }, uFlowVis: { value: 6 } };
   const fmat = new THREE.ShaderMaterial({ vertexShader: FLUID_VS, fragmentShader: FLUID_FS, uniforms: FU, transparent: true, depthWrite: true });
   const fluid = new THREE.Mesh(fg, fmat); fluid.frustumCulled = false; fluid.renderOrder = 2;
   return {
     mesh, fluid, U, FU, shared, h30,
+    // recalcula el mapa de sombras si el sol se movió más de ~0,3° o cambió la exageración
+    updateShadows(renderer, force) {
+      const sd = shared.uSunDir.value, ex = shared.uEx.value;
+      if (!force && sd.angleTo(lastSun) < 0.005 && ex === lastEx) return false;
+      lastSun.copy(sd); lastEx = ex; shMat.uniforms.uSunDir.value.copy(sd); shMat.uniforms.uEx.value = ex;
+      const prev = renderer.getRenderTarget(); renderer.setRenderTarget(shRT); renderer.render(shScene, shCam); renderer.setRenderTarget(prev);
+      return true;
+    },
     bind(sol) { const t = sol.U; U.tTerr.value = t[2]; U.tStat.value = t[3]; U.tFluidP.value = t[1]; U.tAsh.value = sol.ashTex; U.tFire.value = sol.fireTex;
-      FU.tTerr.value = t[2]; FU.tFluid.value = t[0]; FU.tFluidP.value = t[1]; FU.tFluxA.value = sol.FX[0]; FU.tBase.value = sol.baseTex; },
+      FU.tTerr.value = t[2]; FU.tFluid.value = t[0]; FU.tFluidP.value = t[1]; FU.tFluxA.value = sol.FX[0]; FU.tFluxB.value = sol.FX[1]; FU.tBase.value = sol.baseTex; },
     setAcc(tex, n, s, count) { U.tAcc.value = tex; U.uAccN.value.set(n[0], n[1]); U.uAccS.value = s; U.uAccCount.value = count; },
   };
 }

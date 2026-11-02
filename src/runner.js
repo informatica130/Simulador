@@ -77,7 +77,7 @@ export class Runner {
     const { buf, bw, bh } = this.sol.summary();
     const A = this.sol.dx * this.sol.dx;
     let mEx = 0, sH = 0, sS = 0, sL = 0, sP = 0, mH = 0, mT = 0, mP = 0, cont = 0, burn = 0, mom = 0, melt = 0, dM = 0, dL = 0, mU = 0, pU = 0;
-    const spots = wantSpots ? { lavaSnow: [], pdc: [], fire: [], mud: [], lava: [], hot: [] } : null;
+    const spots = wantSpots ? { lavaSnow: [], pdc: [], fire: [], mud: [], lava: [], hot: [], lah: [], lav: [], pd: [] } : null;
     const W = bw * 4, ck = this.sol.cellKm * 8;
     for (let j = 0; j < bh; j++) for (let i = 0; i < bw; i++) {
       const o0 = (j * W + i) * 4, o1 = (j * W + bw + i) * 4, o2 = (j * W + 2 * bw + i) * 4, o3 = (j * W + 3 * bw + i) * 4;
@@ -93,6 +93,9 @@ export class Runner {
         if (buf[o0 + 3] > 0.5) spots.pdc.push({ x, y, r: ck, w: buf[o0 + 3], vx: buf[o2 + 1] / buf[o0 + 3], vy: -buf[o2 + 2] / buf[o0 + 3] });
         if (buf[o2] > 0) spots.fire.push({ x, y, r: ck, w: buf[o2] });
         if (buf[o0] > 2 && buf[o3 + 3] > 3) spots.mud.push({ x, y, r: ck, w: buf[o0] * buf[o3 + 3] });
+        if (buf[o2 + 3] > 0.3) spots.lah.push({ x, y, h: buf[o2 + 3], u: buf[o3 + 3] });
+        if (buf[o0 + 2] > 0.5) spots.lav.push({ x, y, T: buf[o1 + 1], h: buf[o0 + 2] / 64 });
+        if (buf[o1 + 2] > 0.2) spots.pd.push({ x, y, h: buf[o1 + 2], u: buf[o0 + 3] > 0 ? Math.hypot(buf[o2 + 1], buf[o2 + 2]) / buf[o0 + 3] : 0 });
       }
     }
     // paso de tiempo: CFL con la onda de gravedad y la advección
@@ -106,6 +109,11 @@ export class Runner {
     T.lahar = sH * A; T.sed = sS * A; T.lava = sL * A; T.pdc = sP * A; T.melt = melt * A; T.depMud = dM * A; T.depLava = dL * A;
     T.burning = burn * A / 1e6; T.maxT = mT; T.maxH = mEx; T.maxU = mU; T.ash = this.ashMass; T.lavaErupted = this.src.cumLavaVol(this.t) / 0.85;
     if (spots) {
+      // frentes: los puntos activos más alejados de la boca, separados entre sí (uno por valle)
+      const v = this.src.vents[0];
+      const front = (arr, sep, n) => { arr.forEach(a => a.d = Math.hypot(a.x - v.x, a.y - v.y)); arr.sort((a, b) => b.d - a.d); const o = [];
+        for (const a of arr) { if (a.d < 0.8) break; if (o.every(b => Math.hypot(a.x - b.x, a.y - b.y) > sep)) o.push(a); if (o.length >= n) break; } return o; };
+      spots.fronts = { lahar: front(spots.lah, 3.0, 3), lava: front(spots.lav, 1.5, 2), pdc: front(spots.pd, 3.0, 2) };
       spots.hot.sort((a, b) => b.w - a.w);
       const sel = []; for (const h of spots.hot) { if (sel.every(s => Math.hypot(s.x - h.x, s.y - h.y) > 1.2)) sel.push(h); if (sel.length >= 5) break; }
       spots.hot = sel;

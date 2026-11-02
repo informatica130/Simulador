@@ -158,3 +158,9 @@ body.picking canvas#gl{cursor:crosshair}
   .rate{display:none}
   .clock b{font-size:13px}
 }
+
+.lbl.flow{font-weight:700;font-size:12px;padding:3px 8px;border-radius:6px;background:rgba(20,12,6,.78);border:1px solid currentColor;text-shadow:none}
+.lbl.flow::after{display:none}
+.lbl.flow.lahar{color:#ffb547}.lbl.flow.lava{color:#ff6a2b}.lbl.flow.pdc{color:#d3a6ff}
+.lbl.gauge.alarm{color:#ff8a7a}
+.views button.follow{color:#ffcf8a;border-color:rgba(255,160,60,.4)}
