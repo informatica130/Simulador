@@ -113,7 +113,7 @@ body.noR .nav{right:12px}
 .fill{position:absolute;left:0;top:12px;height:4px;background:var(--acc);border-radius:2px;width:0}
 .marks{position:absolute;inset:0}
 .marks i{position:absolute;top:6px;width:2px;height:16px;border-radius:1px;background:#fff;opacity:.55}
-.marks i.lahar{background:#d9a066;opacity:.9}.marks i.lava{background:#ff6a2b;opacity:.9}.marks i.pdc{background:#c79bff;opacity:.9}.marks i.phase{background:#7fb8ff;height:8px;top:16px}
+.marks i.lahar{background:#d9a066;opacity:.9}.marks i.lava{background:#ff6a2b;opacity:.9}.marks i.pdc{background:#c79bff;opacity:.9}.marks i.ph{background:#7fb8ff;height:8px;top:16px}
 .marks span{position:absolute;top:-2px;font-size:9.5px;color:var(--tx3);transform:translateX(-50%)}
 .tip{position:absolute;bottom:32px;transform:translateX(-50%);background:var(--glass2);border:1px solid var(--line2);border-radius:8px;padding:4px 8px;font-size:11px;white-space:nowrap}
 #speed{background:rgba(255,255,255,.06);border:1px solid var(--line2);border-radius:8px;padding:6px}

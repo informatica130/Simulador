@@ -84,7 +84,7 @@ async function boot() {
   const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: mobile ? 0 : 4 });
   composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(scene, camera));
-  bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), 0.55, 0.55, 1.1); composer.addPass(bloom);
+  bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), 0.6, 0.5, 2.4); composer.addPass(bloom);
   composer.addPass(new OutputPass());
   setupPoints(); buildLabels(); buildUI(); setupInput();
   setLoad('Preparando la escena…', 0.92);
@@ -95,7 +95,7 @@ async function boot() {
   S.playing = true; $('play').textContent = '❚❚';
   toast('Simulación iniciada · arrastra para mover, botón derecho para rotar, rueda para acercar, clic para medir');
   last = performance.now(); requestAnimationFrame(frame);
-  window.APP = { S, run, sol, src: () => src, camera, controls, goView, applyScenario, setOverlay, flyTo, readback, terr, fx };
+  window.APP = { fxWarm, S, run, sol, src: () => src, camera, controls, goView, applyScenario, setOverlay, flyTo, readback, terr, fx };
 }
 
 function makeStars() {
@@ -186,19 +186,19 @@ function updateLighting() {
   const el = sp.el, az = sp.az * Math.PI / 180, e = el * Math.PI / 180;
   const dir = new THREE.Vector3(Math.sin(az) * Math.cos(e), Math.sin(e), -Math.cos(az) * Math.cos(e));
   sky.material.uniforms.sunPosition.value.copy(dir);
-  const u = sky.material.uniforms; u.turbidity.value = 4; u.rayleigh.value = 1.2; u.mieCoefficient.value = 0.004; u.mieDirectionalG.value = 0.8;
+  const u = sky.material.uniforms; u.turbidity.value = 2.5; u.rayleigh.value = 1.8; u.mieCoefficient.value = 0.003; u.mieDirectionalG.value = 0.78;
   const day = ss(-7, 6, el); NIGHT = 1 - day;
   sunDir.set(dir.x, Math.max(dir.y, -0.2) * S.ex, dir.z).normalize();
   const sh = terr.shared;
   sh.uSunDir.value.copy(sunDir);
   const warm = ss(0, 22, el);
-  sh.uSunCol.value.setRGB(1.0, 0.55 + 0.4 * warm, 0.32 + 0.56 * warm).multiplyScalar(2.6 * ss(-1.5, 5, el));
+  sh.uSunCol.value.setRGB(1.0, 0.55 + 0.4 * warm, 0.32 + 0.56 * warm).multiplyScalar(1.9 * ss(-1.5, 5, el));
   sh.uSkyCol.value.setRGB(0.012 + 0.30 * day, 0.016 + 0.38 * day, 0.03 + 0.52 * day);
   sh.uGroundCol.value.setRGB(0.06, 0.055, 0.045).multiplyScalar(day);
   const sunset = (1 - warm) * day;
   sh.uFogCol.value.setRGB(0.012 + 0.55 * day + 0.2 * sunset, 0.016 + 0.64 * day + 0.03 * sunset, 0.03 + 0.76 * day - 0.15 * sunset);
   sh.uFogD.value = 0.0016 + 0.004 * NIGHT;
-  renderer.toneMappingExposure = 0.62 + 1.1 * NIGHT;
+  renderer.toneMappingExposure = 0.72 + 1.0 * NIGHT;
   stars.material.opacity = ss(0.5, 0.95, NIGHT) * 0.9;
   sky.visible = day > 0.02;
   scene.background = sky.visible ? null : NIGHT_BG;
@@ -369,7 +369,7 @@ function buildTimelineMarks() {
   const M = $('tmarks'); M.innerHTML = '';
   const span = S.tEnd; const stepH = span > 172800 ? 24 : span > 43200 ? 6 : span > 14400 ? 2 : 1;
   for (let h = stepH; h * 3600 < span; h += stepH) { const s = document.createElement('span'); s.style.left = (100 * h * 3600 / span) + '%'; s.textContent = h >= 24 && h % 24 === 0 ? `${h / 24} d` : `${h} h`; M.appendChild(s); }
-  for (const p of src.phases) { const i = document.createElement('i'); i.className = 'phase'; i.style.left = (100 * p.t0 * 60 / span) + '%'; i.title = p.MER ? 'Fase explosiva' : 'Lava'; M.appendChild(i); }
+  for (const p of src.phases) { const i = document.createElement('i'); i.className = 'ph'; i.style.left = (100 * p.t0 * 60 / span) + '%'; i.title = p.MER ? 'Fase explosiva' : 'Lava'; M.appendChild(i); }
 }
 
 function kpi(label, value, hot) { return `<div class="${hot ? 'hot' : ''}"><b>${value}</b><small>${label}</small></div>`; }
@@ -619,6 +619,11 @@ function onResize() {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
 }
 
+function fxWarm(sec) {
+  const st = run.cur ? run.cur.state : null; if (!st) return;
+  const P = st.MER > 50 ? src.plume(st.MER) : null;
+  for (let t = 0; t < sec; t += 0.5) fx.update(0.5, { src: st, plume: P, vents: src.vents, wind: src.wind, phreatic: S.scen === 'freatica', fumarole: st.active ? 2.5 : 1 });
+}
 // ------------------------------------------------------------------ bucle principal
 let last = 0, fpsS = 60, simRateS = 0, lastStat = 0;
 function frame(now) {
@@ -632,7 +637,7 @@ function frame(now) {
     const tLim = Math.min(S.tEnd, S.runTo != null ? S.runTo : run.t + want);
     run.advance(S.maxSteps, tLim);
     simAdv = run.t - t0;
-    if (S.runTo != null && run.t >= S.runTo - 1e-3) S.runTo = null;
+    if (S.runTo != null && run.t >= S.runTo - 1e-3) { S.runTo = null; fxWarm(90); }
     if (run.t >= S.tEnd) { S.playing = false; $('play').textContent = '▶'; toast('Fin del período simulado. Explora los resultados con las capas de análisis.'); }
     // presupuesto adaptativo de pasos por cuadro
     if (S.capSteps) S.maxSteps = S.capSteps; else if (dtr > 0.045) S.maxSteps = Math.max(2, Math.floor(S.maxSteps * 0.85)); else if (dtr < 0.025) S.maxSteps = Math.min(mobile ? 60 : 240, Math.ceil(S.maxSteps * 1.08) + 1);

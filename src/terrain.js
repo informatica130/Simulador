@@ -50,12 +50,21 @@ uniform float uEx; uniform int uS; uniform ivec2 uSimN; uniform ivec2 uDemN;
 uniform ivec2 uAccN; uniform int uAccS; uniform int uProbCh;
 uniform vec4 uGrid; // X0, Y1, cell(km), 0
 varying vec3 vW; varying vec3 vN; varying vec2 vXY; varying float vZ; varying float vAO;
-varying vec4 vA; varying vec4 vB; varying vec4 vC; varying vec4 vD;
+varying vec4 vA; varying vec4 vB; varying vec4 vC; varying vec4 vD; varying float vIce;
+// muestreo bilineal de los campos del motor cuando su grilla es más gruesa que el DEM
+vec4 simB(sampler2D t, ivec2 ij){
+  ivec2 lo = ivec2(0), hi = uSimN - 1;
+  if (uS == 1) return texelFetch(t, clamp(ij, lo, hi), 0);
+  vec2 f = (vec2(ij) - 0.5 * float(uS - 1)) / float(uS); vec2 i0 = floor(f); vec2 w = f - i0; ivec2 a = ivec2(i0);
+  vec4 v00 = texelFetch(t, clamp(a, lo, hi), 0), v10 = texelFetch(t, clamp(a + ivec2(1, 0), lo, hi), 0);
+  vec4 v01 = texelFetch(t, clamp(a + ivec2(0, 1), lo, hi), 0), v11 = texelFetch(t, clamp(a + ivec2(1, 1), lo, hi), 0);
+  return mix(mix(v00, v10, w.x), mix(v01, v11, w.x), w.y);
+}
 float bedAt(ivec2 ij){
   ij = clamp(ij, ivec2(0), uDemN - 1);
   vec2 d = texelFetch(tDem, ij, 0).rg;
-  ivec2 sc = clamp(ij / uS, ivec2(0), uSimN - 1);
-  return d.r + texelFetch(tTerr, sc, 0).r - texelFetch(tStatic, sc, 0).r;
+  if (uS == 1) return d.r + texelFetch(tTerr, ij, 0).r - texelFetch(tStatic, ij, 0).r;
+  return d.r + simB(tTerr, ij).r - simB(tStatic, ij).r;
 }
 void main(){
   ivec2 ij = ivec2(aIJ);
@@ -69,14 +78,16 @@ void main(){
   vW = p; vXY = vec2(position.x, -position.z); vZ = z;
   vAO = texelFetch(tDem, ij, 0).g;
   ivec2 sc = clamp(ij / uS, ivec2(0), uSimN - 1);
-  vec4 tr = texelFetch(tTerr, sc, 0), s0 = texelFetch(tStatic, sc, 0), st = texelFetch(tStat, sc, 0);
-  vec4 fp = texelFetch(tFluidP, sc, 0), ash = texelFetch(tAsh, sc, 0), fi = texelFetch(tFire, sc, 0);
+  vec4 tr = simB(tTerr, ij), s0 = simB(tStatic, ij), st = simB(tStat, ij);
+  vec4 fp = simB(tFluidP, ij), ash = simB(tAsh, ij), fi = simB(tFire, ij);
+  vec4 stN = texelFetch(tStat, sc, 0), fpN = texelFetch(tFluidP, sc, 0);
+  st.yw = stN.yw; fp.z = fpN.z;
   ivec2 ac = clamp(ij / uAccS, ivec2(0), uAccN - 1);
   vec4 acc = texelFetch(tAcc, ac, 0);
   float pr = uProbCh == 0 ? acc.x : uProbCh == 1 ? acc.y : uProbCh == 2 ? acc.z : acc.w;
   vA = vec4(tr.y, tr.x - s0.x, st.z, ash.x);
   vB = vec4(fi.y, fi.z, st.x, st.y);
-  vC = vec4(pr, st.w, s0.y, ash.z);
+  vC = vec4(pr, st.w, s0.y, ash.z); vIce = s0.w;
   vD = vec4(fp.w, fp.z, tr.w, tr.z);
   gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
 }`;
@@ -87,7 +98,7 @@ uniform sampler2D tSat, tDem; uniform ivec2 uDemN; uniform vec4 uGrid; uniform v
 uniform float uEx; uniform int uBase; uniform int uOverlay; uniform float uAccCount; uniform float uSimT;
 uniform float uShadows; uniform float uContours; uniform vec2 uVent; uniform float uSnowVis;
 varying vec3 vW; varying vec3 vN; varying vec2 vXY; varying float vZ; varying float vAO;
-varying vec4 vA; varying vec4 vB; varying vec4 vC; varying vec4 vD;
+varying vec4 vA; varying vec4 vB; varying vec4 vC; varying vec4 vD; varying float vIce;
 ` + COMMON_GLSL + /* glsl */`
 float demAt(vec2 xy){ ivec2 ij = ivec2(floor((xy.x - uGrid.x) / uGrid.z + 0.5), floor((uGrid.y - xy.y) / uGrid.z + 0.5));
   if (ij.x < 0 || ij.y < 0 || ij.x >= uDemN.x || ij.y >= uDemN.y) return -1e4; return texelFetch(tDem, ij, 0).r; }
@@ -123,13 +134,17 @@ void main(){
   // --- nieve estacional y glaciar (dinámicos)
   float swe0 = vC.z;
   if (uSnowVis > 0.5 && uBase == 0) {
-    float sn = smoothstep(0.03, 0.35, swe + (n1 - 0.5) * 0.15) * (1.0 - smoothstep(42.0, 58.0, slope));
-    vec3 snowC = mix(vec3(0.80, 0.85, 0.92), vec3(0.93, 0.95, 0.98), n2);
-    if (swe > 3.0) snowC = mix(snowC, vec3(0.70, 0.80, 0.88), 0.35 * smoothstep(0.55, 0.75, fbm(vXY * 40.0 + vec2(n1 * 3.0, 0.0)))); // grietas del glaciar
-    alb = mix(alb, snowC, sn * 0.93);
-    // donde el hielo/nieve se derritió: roca y ceniza húmedas
-    float melted = swe0 > 0.3 ? smoothstep(0.65, 0.1, swe / swe0) : 0.0;
-    alb = mix(alb, vec3(0.10, 0.09, 0.085) * (0.8 + 0.4 * n2), melted * 0.9);
+    // nieve estacional (lo que excede al hielo glaciar); el glaciar se ve tal como en la imagen real
+    float seas = max(0.0, swe - vIce);
+    float sn = smoothstep(0.02, 0.25, seas + (n1 - 0.5) * 0.08) * (1.0 - smoothstep(42.0, 58.0, slope));
+    vec3 snowC = mix(vec3(0.78, 0.82, 0.88), vec3(0.88, 0.90, 0.93), n2);
+    alb = mix(alb, snowC, sn * 0.9);
+    // glaciar: leve realce azulado de grietas
+    float ice = smoothstep(1.0, 6.0, min(swe, vIce));
+    alb = mix(alb, alb * vec3(0.92, 0.97, 1.05), ice * 0.5 * smoothstep(0.5, 0.75, fbm(vXY * 40.0 + vec2(n1 * 3.0, 0.0))));
+    // donde el hielo o la nieve se derritieron: roca y ceniza húmedas, canales en el glaciar
+    float melted = swe0 > 0.3 ? smoothstep(0.7, 0.15, swe / swe0) : 0.0;
+    alb = mix(alb, vec3(0.085, 0.078, 0.072) * (0.8 + 0.4 * n2), melted * 0.92);
   }
   // --- caída de tefra (mm ≈ kg/m²)
   if (ash > 0.05) {
@@ -198,7 +213,7 @@ void main(){
   // profundidad máxima entre vecinos para que las orillas se intersecten con el terreno
   float h = f.x + f.z;
   float hn = max(max(fl(p + ivec2(1, 0)).x + fl(p + ivec2(1, 0)).z, fl(p - ivec2(1, 0)).x + fl(p - ivec2(1, 0)).z), max(fl(p + ivec2(0, 1)).x + fl(p + ivec2(0, 1)).z, fl(p - ivec2(0, 1)).x + fl(p - ivec2(0, 1)).z));
-  float y = h > 0.02 ? bed + h + 0.6 : bed - 2.5 - (hn > 0.0 ? 0.0 : 6.0);
+  float y = h > 0.02 ? bed + h + 0.6 : bed - (hn > 0.0 ? 0.3 : 4.0);
   vec4 q = texelFetch(tFluxA, p, 0), qW = texelFetch(tFluxA, clamp(p - ivec2(1, 0), ivec2(0), uSimN - 1), 0), qN = texelFetch(tFluxA, clamp(p - ivec2(0, 1), ivec2(0), uSimN - 1), 0);
   vec2 vm = vec2(0.5 * (qW.x + q.x), -0.5 * (qN.y + q.y)) / max(f.x, 0.05);
   vec2 vl = vec2(0.5 * (qW.z + q.z), -0.5 * (qN.w + q.w)) / max(f.z, 0.05);

@@ -39,7 +39,7 @@ void main(){
   if (dens <= 0.01) discard;
   vec3 nrm = normalize(vec3(p * 0.9, sqrt(max(0.0, 1.0 - r * r)) + 0.3));
   float lam = 0.5 + 0.5 * dot(nrm, uSunV);
-  vec3 c = vCol.rgb * (uSunCol * lam * 0.9 + uSkyCol * 0.85) ;
+  vec3 c = vCol.rgb * (uSunCol * lam * 0.42 + uSkyCol * 0.9 + 0.02);
   c += vec3(1.0, 0.35, 0.08) * vGlow * (1.0 - 0.5 * r);
   float d = length(vWp - uCamPos);
   c = mix(c, uFogCol, clamp(1.0 - exp(-d * uFogD), 0.0, 1.0));
@@ -139,7 +139,7 @@ export class FX {
         const lat = (rnd() - 0.5) * (2500 + d * 0.25);
         const x = vx0 + wx * d + wy * lat, y = vy0 + wy * d - wx * lat;
         const z = P.Ht * (0.55 + 0.3 * rnd());
-        this.smoke.add(x, y, z, wx * vref * 0.5, wy * vref * 0.5, -(6 + 10 * rnd()), 900, 500, 1100, ASHF, 0.32, 0.30, 0.29, 0.22);
+        this.smoke.add(x, y, z, wx * vref * 0.5, wy * vref * 0.5, -(6 + 10 * rnd()), 900, 500, 1100, ASHF, 0.30, 0.28, 0.27, 0.10);
       }
     }
     // ---------------- fuente de lava
@@ -190,7 +190,7 @@ export class FX {
     // vapor donde la lava funde nieve/hielo (explosiones de vapor)
     let n = emit('steam', Math.min(150, sp.lavaSnow.length * 6));
     for (let k = 0; k < n; k++) { const b = pick(sp.lavaSnow); if (!b) break; const x = b.x + (rnd() - 0.5) * b.r, y = b.y + (rnd() - 0.5) * b.r;
-      this.smoke.add(x * 1000, y * 1000, this.hAt(x, y) + 10, 0, 0, 10 + 20 * rnd(), 60 + 80 * rnd(), 40, 420, STEAM, 0.9, 0.91, 0.93, 0.6); }
+      this.smoke.add(x * 1000, y * 1000, this.hAt(x, y) + 10, 0, 0, 10 + 20 * rnd(), 60 + 80 * rnd(), 40, 420, STEAM, 0.85, 0.86, 0.88, 0.35); }
     // gas sobre la lava
     n = emit('lgas', Math.min(80, sp.lava.length * 1.5));
     for (let k = 0; k < n; k++) { const b = pick(sp.lava); if (!b) break; const x = b.x + (rnd() - 0.5) * b.r, y = b.y + (rnd() - 0.5) * b.r;

@@ -40,7 +40,7 @@ float etaMud(float cv){ return 0.0012 * exp(19.0 * cv); }      // Pa·s
 float rhoMud(float cv){ return 1000.0 + 1650.0 * cv; }         // kg/m³
 float manMud(float cv){ return 0.032 + 0.05 * cv; }            // Manning
 // --- reología de la lava (andesita basáltica del Llaima, rica en cristales)
-float phiCr(float T){ return clamp(0.30 + 0.28 * (1450.0 - T) / 225.0, 0.30, 0.585); }
+float phiCr(float T){ return clamp(0.22 + 0.36 * (1450.0 - T) / 225.0, 0.22, 0.585); }
 float etaLava(float T){ float Tc = clamp(T, 1150.0, 1500.0); float m = -4.55 + 6500.0 / (Tc - 632.0);
   return min(pow(10.0, m) * pow(1.0 - phiCr(T) / 0.6, -2.5), 1e10); }
 float tauLava(float T){ return min(pow(10.0, 13.0997 - 0.0089 * T), 2e5); }
@@ -145,7 +145,7 @@ void main(){
   // ---------- fusión de nieve y hielo (balance de energía)
   float swe = tr.y, mL = 0.0, mP = 0.0, mS = 0.0;
   if (swe > 0.0) {
-    if (fl.z > 0.02 && fl.w > 900.0) mL = 150.0 * (fl.w - 273.0) * (1.0 + 0.5 * min(ul, 3.0)) / (1000.0 * 3.34e5);
+    if (fl.z > 0.02 && fl.w > 900.0) mL = 60.0 * (fl.w - 273.0) * (1.0 + 0.6 * min(ul, 3.0)) / (1000.0 * 3.34e5);   // capa de vapor (Leidenfrost) limita el flujo de calor
     if (fp.x > 0.02 && fp.y > 373.0) mP = fp.x * 1100.0 * 1100.0 * (fp.y - 273.0) * 0.5 / (1000.0 * 3.34e5 * 300.0);
     vec2 dd = vec2(p) - uSpat.xy; mS = uSpat.w * exp(-dot(dd, dd) / (2.0 * uSpat.z * uSpat.z + 1e-6));
   }
@@ -199,10 +199,11 @@ void main(){
     Tp -= uDt * (Tp - 300.0) / 1500.0;
     Tp -= uDt * fPm * 1000.0 * 3.34e5 / (1100.0 * 1100.0 * max(hp1, 0.05));
   }
-  float pdep = fp.x * (0.0012 + 0.02 * (1.0 - min(up / 4.0, 1.0)));
+  // sedimentación de la corriente densa: lenta mientras corre, rápida al frenarse
+  float pdep = fp.x * (0.0007 + 0.006 * (1.0 - min(up / 3.0, 1.0)));
   pdep = min(pdep, 0.5 * fp.x / uDt);
   hp1 -= uDt * pdep; bedAdd += uDt * pdep * 0.7;
-  if (hp1 < 0.005) { bedAdd += max(hp1, 0.0) * 0.7; hp1 = 0.0; Tp = 0.0; }
+  if (hp1 < 2e-4) { bedAdd += max(hp1, 0.0) * 0.7; hp1 = 0.0; Tp = 0.0; }
   // ---------- bordes: salida libre del dominio
   if (p.x <= 1 || p.y <= 1 || p.x >= uN.x - 2 || p.y >= uN.y - 2) { hm1 = 0.0; sm1 = 0.0; cv1 = 0.0; hl1 = 0.0; hp1 = 0.0; }
   // ---------- salidas
@@ -380,9 +381,9 @@ export class Solver {
   setStatic(swe) {
     const D = this.D, s = this.s, a = this.staticTex.image.data; this.swe0 = 0;
     for (let j = 0; j < this.ny; j++) for (let i = 0; i < this.nx; i++) {
-      let z = 0, w = 0, f = 0, rv = 0;
-      for (let b = 0; b < s; b++) for (let c = 0; c < s; c++) { const k = (j * s + b) * D.nx + i * s + c; z += D.dem[k]; w += swe[k]; f += D.fuel[k]; rv = Math.max(rv, D.river[k]); }
-      const o = (j * this.nx + i) * 4, q = s * s; a[o] = z / q; a[o + 1] = w / q; a[o + 2] = f / q; a[o + 3] = rv;
+      let z = 0, w = 0, f = 0, ic = 0;
+      for (let b = 0; b < s; b++) for (let c = 0; c < s; c++) { const k = (j * s + b) * D.nx + i * s + c; z += D.dem[k]; w += swe[k]; f += D.fuel[k]; ic += D.ice[k]; }
+      const o = (j * this.nx + i) * 4, q = s * s; a[o] = z / q; a[o + 1] = w / q; a[o + 2] = f / q; a[o + 3] = ic / q;
       this.swe0 += w / q;
     }
     this.staticTex.needsUpdate = true;
