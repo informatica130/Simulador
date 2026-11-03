@@ -123,7 +123,7 @@ export class FX {
     this.boltLife = 0; this.flash = null; this.pulseT = 0; this.boom = 0;
     this.spots = { lavaSnow: [], pdc: [], fire: [], mud: [], lava: [] };
     // Bocas de desgasificación: conos anidados en el cráter principal (2008–09), borde del cráter y Pichillaima
-    this.fumaroles = [[0.03, 0.04, 0.42], [-0.06, 0.10, 0.16], [0.11, -0.03, 0.14], [-0.12, -0.06, 0.08], [0.15, 0.13, 0.07], [0.02, -0.15, 0.08], [-0.17, 0.06, 0.05], [0.36, -1.08, 0.02]];
+    this.fumaroles = [[0.03, 0.0, 0.42], [-0.04, 0.06, 0.16], [0.10, -0.05, 0.14], [-0.08, -0.07, 0.08], [0.13, 0.08, 0.07], [0.03, -0.12, 0.08], [-0.12, 0.02, 0.05], [0.36, -1.08, 0.02]];
     this.fumF = 300; this.fumDh = 150; this.fumL = 400; this.sunW = [0, 0, 1];
   }
   setSpots(sp) { this.spots = sp; }
@@ -148,7 +148,7 @@ export class FX {
         const up = P.U0 * (0.6 + 0.4 * rnd());
         const dark = 0.16 + 0.08 * rnd();
         const c = steamy ? [0.78, 0.78, 0.8] : [dark * 1.08, dark, dark * 0.94];
-        this.smoke.add(v.x * 1000 + Math.cos(a) * r, v.y * 1000 + Math.sin(a) * r, this.hAt(v.x, v.y) + 30, 0, 0, up, 300 + 500 * rnd(), Math.max(60, P.b0 * 2.5), 600, SMOKE, c[0], c[1], c[2], 0.85, s.MER > 2e4 ? 0.35 : 0.1);
+        this.smoke.add(v.x * 1000 + Math.cos(a) * r, v.y * 1000 + Math.sin(a) * r, this.hAt(v.x, v.y) + 30, 0, 0, up, 300 + 500 * rnd(), Math.max(60, P.b0 * 2.5), 600, SMOKE, c[0], c[1], c[2], 0.85, s.MER > 2e4 ? 0.12 : 0.04);
       }
       // lluvia de ceniza bajo la nube paraguas
       n = emit('ashf', Math.max(0, 4 * (lg - 4)));
@@ -168,7 +168,7 @@ export class FX {
         const v = vents[(rnd() * vents.length) | 0] || v0;
         const th = (1 - Math.pow(rnd(), 2)) * 0.25, a = rnd() * 6.283, sp = vF * (0.55 + 0.5 * rnd());
         this.glow.add(v.x * 1000 + (rnd() - 0.5) * 60, v.y * 1000 + (rnd() - 0.5) * 60, this.hAt(v.x, v.y) + 15,
-          Math.sin(th) * Math.cos(a) * sp, Math.sin(th) * Math.sin(a) * sp, Math.cos(th) * sp, 30, 18 + 25 * rnd(), 8, SPARK, 1, 0.45 + 0.2 * rnd(), 0.12, 1, 3.0, 0.004);
+          Math.sin(th) * Math.cos(a) * sp, Math.sin(th) * Math.sin(a) * sp, Math.cos(th) * sp, 30, 18 + 25 * rnd(), 8, SPARK, 1, 0.45 + 0.2 * rnd(), 0.12, 1, 1.6, 0.004);
       }
     }
     // ---------------- explosiones estrombolianas y balística

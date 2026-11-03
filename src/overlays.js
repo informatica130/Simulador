@@ -96,6 +96,7 @@ export function createOverlays(D, solver, hAt, terrainShared) {
     setRiverEx(ex) { const a = rivers.geometry.attributes.position.array, b = rivers.userData.baseY; for (let i = 0; i < b.length; i++) a[i * 3 + 1] = b[i] * ex; rivers.geometry.attributes.position.needsUpdate = true; },
     setVents(vents, ex) {
       markers.clear();
+      return; // sin anillo: la boca se reconoce por la columna y la fuente de lava
       for (const v of vents) {
         const h = hAt(v.x, v.y);
         const ring = new THREE.Mesh(new THREE.RingGeometry(Math.max(0.05, v.r) * 0.9, Math.max(0.05, v.r) * 1.25, 40), new THREE.MeshBasicMaterial({ color: 0xff5a1f, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthTest: false }));

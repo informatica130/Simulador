@@ -17,7 +17,7 @@ export const PHYS = {
 
 // Ubicaciones de referencia (km)
 export const VENTS = {
-  crater: { x: 0.03, y: 0.03, h: 3122, name: 'Cráter principal' },
+  crater: { x: 0.03, y: 0.0, h: 3126, name: 'Cráter principal' },
   pichi: { x: 0.36, y: -1.08, h: 2912, name: 'Pichillaima (cono SSE)' },
 };
 // Lineamiento NNE de conos adventicios (az ≈ 20°)
@@ -65,13 +65,13 @@ export const SCENARIOS = {
   reposo: {
     name: 'Hoy · reposo con fumarolas', short: 'Hoy (reposo)', vei: '—', date: [2026, 11, 2, 9.5],
     desc: 'Estado actual: sin erupción desde 2009. Desgasificación persistente desde los conos anidados del cráter, con ciclos de ~7 días. Ríos con su caudal normal del mes. Úsalo como referencia del paisaje antes de simular una erupción.',
-    vents: [{ x: 0.03, y: 0.03, r: 0.12 }], w0: 0.03, T0: 1420, tgsd: [0.8, 1.7], wind: { to: 75, speed: 18 },
+    vents: [{ x: 0.03, y: 0.0, r: 0.12 }], w0: 0.03, T0: 1420, tgsd: [0.8, 1.7], wind: { to: 75, speed: 18 },
     phases: [{ t0: 0, t1: 2880 }],
   },
   e2008: {
     name: '1 ene 2008 · Estromboliana violenta', short: 'Ene 2008', vei: 'IEV 3', date: [2008, 1, 1, 17.9],
     desc: 'Fuente de lava y columna de 6–8 km. La lava desbordó el borde occidental y abrió canales en el glaciar; lahares pequeños por el Captrén y el Truful-Truful. Comenzó casi sin aviso.',
-    vents: [{ x: -0.12, y: 0.0, r: 0.12 }], w0: 0.025, T0: 1418, tgsd: [0.5, 1.6],
+    vents: [{ x: 0.03, y: 0.0, r: 0.15 }], w0: 0.025, T0: 1418, tgsd: [0.5, 1.6],
     wind: { to: 100, speed: 22 },
     phases: [
       { t0: 0, t1: 360, MER: 6e5, fountain: 450, ballistic: 0.8, pulse: true },
@@ -82,7 +82,7 @@ export const SCENARIOS = {
   e2009: {
     name: 'Abr 2009 · Fisura y fuente de lava', short: 'Abr 2009', vei: 'IEV 3', date: [2009, 4, 1, 5.0],
     desc: 'Fuente de lava de cientos de metros y dos coladas: una hacia el SO (~4,5 km) que derritió el glaciar y generó un lahar al Calbuco, y otra al N.',
-    vents: [{ x: -0.15, y: -0.1, r: 0.15 }, { x: 0.05, y: 0.15, r: 0.12 }], w0: 0.02, T0: 1423, tgsd: [0.0, 1.8],
+    vents: [{ x: 0.03, y: 0.0, r: 0.18 }], w0: 0.02, T0: 1423, tgsd: [0.0, 1.8],
     wind: { to: 80, speed: 18 },
     phases: [
       { t0: 0, t1: 600, MER: 3e5, fountain: 600, ballistic: 0.6, pulse: true },
@@ -92,7 +92,7 @@ export const SCENARIOS = {
   e1994: {
     name: 'May 1994 · Estromboliana con mucha nieve', short: 'May 1994', vei: 'IEV 2', date: [1994, 5, 17, 6.0],
     desc: 'Erupción estromboliana a fines de otoño, con nieve fresca: el deshielo generó un lahar por el Calbuco–Quepe que destruyó 5 puentes y llegó a Vilcún (43 km al O).',
-    vents: [{ x: -0.1, y: 0.0, r: 0.15 }], w0: 0.025, T0: 1418, tgsd: [0.5, 1.5],
+    vents: [{ x: 0.03, y: 0.0, r: 0.15 }], w0: 0.025, T0: 1418, tgsd: [0.5, 1.5],
     wind: { to: 95, speed: 25 },
     phases: [
       { t0: 0, t1: 720, MER: 2.5e5, fountain: 300, ballistic: 0.7, pulse: true },
@@ -102,7 +102,7 @@ export const SCENARIOS = {
   e1957: {
     name: '1955–57 · Pichillaima', short: '1957', vei: 'IEV 3', date: [1957, 3, 1, 12],
     desc: 'Actividad efusiva importante desde el cono sur con coladas al N, NE y E y lahares unas diez veces mayores que los de 2008.',
-    vents: [{ x: 0.36, y: -1.08, r: 0.15 }, { x: 0.15, y: -0.2, r: 0.12 }], w0: 0.02, T0: 1428, tgsd: [0.5, 1.6],
+    vents: [{ x: 0.36, y: -1.08, r: 0.15 }, { x: 0.03, y: 0.0, r: 0.12 }], w0: 0.02, T0: 1428, tgsd: [0.5, 1.6],
     wind: { to: 110, speed: 25 },
     phases: [
       { t0: 0, t1: 1440, MER: 4e5, fountain: 400, ballistic: 0.6, pulse: true },
@@ -122,7 +122,7 @@ export const SCENARIOS = {
   e1640: {
     name: '1640 · Subpliniana (IEV 4)', short: '1640', vei: 'IEV 4', date: [1640, 2, 23, 14],
     desc: 'La mayor erupción histórica: columna sostenida de 15–20 km, caída de escoria y lapilli al E, colapsos parciales con corrientes piroclásticas por los valles altos y lahares grandes.',
-    vents: [{ x: 0.03, y: 0.03, r: 0.25 }], w0: 0.035, T0: 1398, tgsd: [1.2, 2.0],
+    vents: [{ x: 0.03, y: 0.0, r: 0.25 }], w0: 0.035, T0: 1398, tgsd: [1.2, 2.0],
     wind: { to: 100, speed: 30 },
     phases: [
       { t0: 0, t1: 25, MER: 8e5, ballistic: 1 },
@@ -134,7 +134,7 @@ export const SCENARIOS = {
   pliniana: {
     name: 'Pliniana con colapso (peor caso)', short: 'Pliniana', vei: 'IEV 4–5', date: [2027, 1, 20, 15],
     desc: 'Escenario de planificación sin análogo histórico directo: columna de >20 km que colapsa parcialmente, corrientes de densidad piroclástica radiales y fusión masiva del glaciar.',
-    vents: [{ x: 0.03, y: 0.03, r: 0.3 }], w0: 0.03, T0: 1373, tgsd: [1.5, 2.2],
+    vents: [{ x: 0.03, y: 0.0, r: 0.3 }], w0: 0.03, T0: 1373, tgsd: [1.5, 2.2],
     wind: { to: 100, speed: 30 },
     phases: [
       { t0: 0, t1: 15, MER: 2e6, ballistic: 1 },
@@ -156,7 +156,7 @@ export const SCENARIOS = {
   custom: {
     name: 'Personalizado', short: 'Personal', vei: '—', date: [2026, 11, 2, 18],
     desc: 'Coloca tú la boca eruptiva o la fisura sobre el mapa y ajusta la tasa, la duración, la nieve y el viento.',
-    vents: [{ x: 0.03, y: 0.03, r: 0.15 }], w0: 0.03, T0: 1423, tgsd: [0.8, 1.7],
+    vents: [{ x: 0.03, y: 0.0, r: 0.15 }], w0: 0.03, T0: 1423, tgsd: [0.8, 1.7],
     wind: { to: 100, speed: 25 },
     phases: [
       { t0: 0, t1: 720, MER: 1e6, fountain: 400, ballistic: 0.7, pulse: true },

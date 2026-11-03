@@ -11,7 +11,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { loadData, makeGeo, heightSampler, QSPEC_MONTH, drainageAt, channelAt } from './data.js';
 import { SCENARIOS, CATALOG, GAUGES, MONTHS, VENTS } from './config.js';
 import { EruptionSource, fissureVents } from './eruption.js';
-import { Solver } from './solver.js';
+import { Solver, Player } from './solver.js';
 import { Runner } from './runner.js';
 import { createTerrain } from './terrain.js';
 import { createOverlays, Labels } from './overlays.js';
@@ -32,16 +32,16 @@ const S = {
   scen: params.get('esc') && SCENARIOS[params.get('esc')] ? params.get('esc') : 'e2008',
   mult: 0, emult: 0, T0: 1420, fumQ: 1.6, rh: 0, month: 0, hour: 18, wto: 100, wsp: 22, rain: 0, rainS: 2, melt: 1, erode: true,
   ventMode: 'scen', customVents: null, fisA: null,
-  playing: false, speed: 300, quality: +(params.get('q') || 2), lite: params.get('lite') === '1' || mobile, overlay: 0, base: 0, ex: 1.5, probCh: 0,
+  playing: false, speed: 60, quality: +(params.get('q') || 2), lite: params.get('lite') === '1' || mobile, overlay: 0, base: 0, ex: 1.5, probCh: 0,
   show: { daylight: false, roads: true, rivers: false, blds: true, labels: true, fx: true, arrows: true, trees: !(params.get('lite') === '1' || mobile), shadows: true, contours: false, snow: true, sound: false },
-  gaugeSel: 0, probe: null, follow: null, pr: 1, runTo: null, maxSteps: 30, capSteps: +(params.get('steps') || 0),
+  gaugeSel: 0, probe: null, follow: null, pr: 1, playT: 0, computing: false, lastRec: 0, evIdx: 0, runTo: null, maxSteps: 30, capSteps: +(params.get('steps') || 0),
 };
 
 const setLoad = (t, f) => { $('loadtxt').textContent = t; if (f != null) $('lbar').style.width = (f * 100) + '%'; };
 const fail = m => { $('loading').innerHTML = `<div><b>LLAIMA 3D</b><div class="err">${m}</div></div>`; };
 
 let D, geo, hAt, renderer, scene, camera, controls, composer, bloom, sky, stars;
-let sol, run, terr, ovl, fx, labels, ens = null, src, forest;
+let sol, run, terr, ovl, fx, labels, ens = null, src, forest, player, vsum = null;
 const snd = new Sound();
 let gaugePts = [], allPts = [], idx = {}, sites = [];
 const series = { gauges: [] };
@@ -84,6 +84,7 @@ async function boot() {
   }
   sol = new Solver(renderer, D, { scale: S.quality });
   run = new Runner(sol, D, { spinHours: +(params.get('spin') ?? 1.5) });
+  player = new Player(sol);
   terr = createTerrain(D, sol, satTex, { step: +(params.get('m') || (S.lite ? 4 : 2)), satHi, hiBounds: [-13, 15, -21, 13] });
   scene.add(terr.mesh); scene.add(terr.fluid);
   ovl = createOverlays(D, sol, hAt, terr.shared); scene.add(ovl.group);
@@ -105,7 +106,7 @@ async function boot() {
   S.playing = true; $('play').textContent = '❚❚';
   toast('Simulación iniciada · arrastra para mover, botón derecho para rotar, rueda para acercar, clic para medir');
   last = performance.now(); requestAnimationFrame(frame);
-  window.APP = { fxWarm, S, run, sol, src: () => src, camera, controls, goView, applyScenario, setOverlay, flyTo, readback, terr, fx };
+  window.APP = { fxWarm, S, get forest() { return forest; }, get player() { return player; }, run, sol, src: () => src, camera, controls, goView, applyScenario, setOverlay, flyTo, readback, terr, fx };
 }
 
 function makeStars() {
@@ -177,10 +178,11 @@ function applyScenario(key, fromPreset) {
   if (hadSnap !== sol.baseMonth) resnapGauges();
   fx.clear(); ovl.setVents(src.vents, S.ex);
   events = []; evFlags = {}; series.gauges = gaugePts.map(() => []); $('log').innerHTML = '';
+  S.computing = true; S.playT = 0; S.lastRec = -1e9; csmp = null; vsum = null; player.t = -1;
   S.runTo = null; S.tEnd = Math.min(4 * 86400, src.tEnd + 3 * 3600);
   $('scenDesc').textContent = sc.desc;
   document.querySelectorAll('#scenList button').forEach(b => b.classList.toggle('on', b.dataset.k === key));
-  buildTimelineMarks(); readback(true); updateUI(true);
+  buildTimelineMarks(); computeRecord(); readback(true); updateUI(true);
 }
 
 // ------------------------------------------------------------------ iluminación astronómica
@@ -204,7 +206,7 @@ function simDate(t) {
 const sunDir = new THREE.Vector3(), tmpC = new THREE.Color();
 let NIGHT = 0; const NIGHT_BG = new THREE.Color(0.004, 0.006, 0.012);
 function updateLighting() {
-  const { ms, off } = simDate(run.t);
+  const { ms, off } = simDate(S.playT);
   // «Siempre de día»: mantiene la fecha real pero fija la hora solar a media mañana para ver bien los flujos
   const msL = S.show.daylight ? ms - (((ms / 3600000 + off) % 24 + 24) % 24 - 10.5) * 3600000 : ms;
   const sp = sunPosition(msL, D.GR.LAT0, D.GR.LON0);
@@ -240,7 +242,7 @@ function updateGlow(st) {
   const set = (x, y, z, r, c, I) => { if (n >= 8) return; P[n].set(x, z / 1000 * S.ex, -y, r); C[n].set(c[0] * I, c[1] * I, c[2] * I); n++; };
   const v = src.vents[0];
   if (st && (st.fountain > 0 || st.MER > 0)) set(v.x, v.y, hAt(v.x, v.y) + 250, 3.5, [1, 0.33, 0.08], 0.35 * Math.log10(1 + st.fountain / 40) + 0.08 * Math.max(0, Math.log10(st.MER / 1e4)) + fx.boom * 0.5);
-  const sp = run.sum && run.sum.spots;
+  const sp = vsum && vsum.spots;
   if (sp) { for (const h of sp.hot) set(h.x, h.y, hAt(h.x, h.y) + 80, 1.4, [1, 0.32, 0.07], Math.min(1.6, 0.25 * Math.log10(1 + h.w))); if (sp.fire.length) { const f = sp.fire.reduce((a, b) => b.w > a.w ? b : a); set(f.x, f.y, hAt(f.x, f.y) + 60, 1.6, [1, 0.42, 0.12], 0.6); } }
   if (fx.flash) set(fx.flash.x, fx.flash.y, fx.flash.z, 9, [0.75, 0.8, 1], 2.2);
   for (let i = n; i < 8; i++) P[i].w = 0;
@@ -248,23 +250,41 @@ function updateGlow(st) {
 
 // ------------------------------------------------------------------ lectura de resultados del motor
 let lastRead = 0, smp = null;
+// lectura del estado mostrado (reproducción): partículas, sensores, sonda
 function readback(force) {
-  const sum = run.readSummary(true);
-  fx.setSpots(sum.spots);
-  smp = sol.sample('all');
-  const g0 = idx.g[0];
-  gaugePts.forEach((g, i) => { const s = smp[g0 + i]; const arr = series.gauges[i]; if (arr) { if (!arr.length || run.t - arr[arr.length - 1][0] > 20 || force) arr.push([run.t, s.fluid[0], s.fluidP[0], s.fluid[2], s.base[0]]); if (arr.length > 3000) arr.shift(); } });
-  run.record({});
-  detectEvents();
+  vsum = run.readSummary(true, player);
+  fx.setSpots(vsum.spots);
+  smp = player.sample('all');
   if (S.probe) showProbe(S.probe.x, S.probe.y, true);
 }
+// registro durante el cálculo: series, hidrogramas y eventos (con su hora)
+let csmp = null;
+function computeRecord() {
+  csmp = sol.sample('all');
+  const g0 = idx.g[0];
+  gaugePts.forEach((g, i) => { const s = csmp[g0 + i]; const arr = series.gauges[i]; if (arr) { arr.push([run.t, s.fluid[0], s.fluidP[0], s.fluid[2], s.base[0]]); if (arr.length > 6000) arr.shift(); } });
+  run.record({ exposure: run.exposure });
+  detectEvents();
+}
+// eventos: se anuncian cuando la reproducción pasa por su hora
+function playEvents(t0, t1) {
+  if (t1 < t0) return;
+  for (const e of events) if (e.t > t0 && e.t <= t1 && e.jump) toast(e.msg, `T+${fmtT(e.t)}`);
+}
+// totales en el instante reproducido (de las series del cálculo)
+function totalsAt(t) {
+  const sr = run.series; if (!sr.length) return run.totals;
+  let lo = 0, hi = sr.length - 1; if (t >= sr[hi].t) return sr[hi];
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (sr[m].t <= t) lo = m; else hi = m; }
+  return sr[lo];
+}
 function logEv(cls, msg, t = run.t, jump = true) {
-  events.push({ t, cls, msg });
+  events.push({ t, cls, msg, jump });
   const li = document.createElement('li'); li.className = 'c-' + cls; li.innerHTML = `<b>T+${fmtT(t)}</b>${msg}`; $('log').prepend(li);
-  if (jump) toast(msg, `T+${fmtT(t)}`);
   const m = document.createElement('i'); m.className = cls; m.style.left = (100 * t / S.tEnd) + '%'; m.title = msg; $('tmarks').appendChild(m);
 }
 function detectEvents() {
+  const smp = csmp;
   if (!smp) return;
   const f = evFlags;
   const st = run.cur ? run.cur.state : null;
@@ -340,7 +360,7 @@ function buildUI() {
   const V = [['general', 'General'], ['meli', 'Melipeuco'], ['crater', 'Cráter'], ['truful', 'Truful-Truful'], ['cong', 'Conguillío'], ['capt', 'Captrén'], ['oeste', 'Ladera oeste']];
   for (const [k, t] of V) { const b = document.createElement('button'); b.textContent = t; b.onclick = () => { S.follow = null; goView(k); }; $('views').appendChild(b); }
   for (const [k, t] of [['lahar', '▶ Seguir el lahar'], ['lava', '▶ Seguir la lava'], ['pdc', '▶ Seguir la CDP']]) { const b = document.createElement('button'); b.textContent = t; b.className = 'follow';
-    b.onclick = () => { S.follow = k; const f = run.sum && run.sum.spots && run.sum.spots.fronts[k][0]; if (f) flyTo(f.x, f.y, 3.2, 0.95); else toast('Todavía no hay ' + (k === 'lahar' ? 'lahar' : k === 'lava' ? 'lava' : 'corriente piroclástica') + ' en movimiento'); }; $('views').appendChild(b); }
+    b.onclick = () => { S.follow = k; const f = vsum && vsum.spots && vsum.spots.fronts && vsum.spots.fronts[k][0]; if (f) flyTo(f.x, f.y, 3.2, 0.95); else toast('Todavía no hay ' + (k === 'lahar' ? 'lahar' : k === 'lava' ? 'lava' : 'corriente piroclástica') + ' en movimiento'); }; $('views').appendChild(b); }
   $('home').onclick = () => goView('general');
   $('zin').onclick = () => dolly(0.6); $('zout').onclick = () => dolly(1.6);
   $('tilt').onclick = () => { const sph = new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target)); sph.phi = sph.phi > 0.3 ? 0.02 : 0.95; $('tilt').textContent = sph.phi < 0.3 ? '2D' : '3D'; animateCam(controls.target.clone(), controls.target.clone().add(new THREE.Vector3().setFromSpherical(sph))); };
@@ -350,9 +370,9 @@ function buildUI() {
   $('reset').onclick = () => { applyScenario(S.scen, false); };
   $('speed').addEventListener('change', () => S.speed = +$('speed').value);
   const tr = $('track');
-  tr.addEventListener('mousemove', e => { const r = tr.getBoundingClientRect(), f = clamp((e.clientX - r.left) / r.width, 0, 1); const tip = $('ttip'); tip.hidden = false; tip.style.left = (f * 100) + '%'; tip.textContent = `T+${fmtT(f * S.tEnd)} · ${f * S.tEnd > run.t ? 'avanzar hasta aquí' : 'recalcular hasta aquí'}`; });
+  tr.addEventListener('mousemove', e => { const r = tr.getBoundingClientRect(), f = clamp((e.clientX - r.left) / r.width, 0, 1); const tip = $('ttip'); tip.hidden = false; tip.style.left = (f * 100) + '%'; tip.textContent = `T+${fmtT(f * S.tEnd)}${f * S.tEnd > run.t ? ' · todavía se está calculando' : ''}`; });
   tr.addEventListener('mouseleave', () => $('ttip').hidden = true);
-  tr.addEventListener('click', e => { const r = tr.getBoundingClientRect(), f = clamp((e.clientX - r.left) / r.width, 0, 1); const t = f * S.tEnd; if (t < run.t) applyScenario(S.scen, false); S.runTo = t; S.playing = true; $('play').textContent = '❚❚'; });
+  tr.addEventListener('click', e => { const r = tr.getBoundingClientRect(), f = clamp((e.clientX - r.left) / r.width, 0, 1); S.playT = Math.min(f * S.tEnd, run.t); fxWarm(40); });
   // probabilidad
   $('ensGo').onclick = startEnsemble; $('ensStop').onclick = () => { if (ens) ens.stop(); $('ensTxt').textContent = 'Detenido.'; };
   // historia
@@ -374,7 +394,7 @@ function syncControls() {
 function applyShow() {
   ovl.roads.visible = S.show.roads; ovl.rivers.visible = S.show.rivers; ovl.blds.visible = S.show.blds;
   if (S.show.sound) snd.enable(); else snd.disable();
-  fx.smoke.mesh.visible = fx.glow.mesh.visible = S.show.fx; forest.visible = S.show.trees; terr.FU.uArrows.value = S.show.arrows ? 1 : 0;
+  fx.smoke.mesh.visible = fx.glow.mesh.visible = S.show.fx; forest.visible = S.show.trees; terr.FU.uArrows.value = S.show.arrows ? 1 : 0; terr.U.uZone.value = S.show.arrows ? 1 : 0;
   if (!S.show.arrows) flowLabels.forEach(l => l.hidden = true); terr.U.uShadows.value = S.show.shadows ? 1 : 0; terr.U.uContours.value = S.show.contours ? 1 : 0; terr.U.uSnowVis.value = S.show.snow ? 1 : 0;
 }
 function setEx() {
@@ -397,7 +417,7 @@ function legend() {
   };
   $('legend').innerHTML = L[S.overlay] || '';
 }
-function togglePlay() { S.playing = !S.playing; $('play').textContent = S.playing ? '❚❚' : '▶'; if (S.playing && run.t >= S.tEnd) applyScenario(S.scen, false); }
+function togglePlay() { S.playing = !S.playing; $('play').textContent = S.playing ? '❚❚' : '▶'; if (S.playing && S.playT >= S.tEnd - 1) S.playT = 0; }
 function buildTimelineMarks() {
   const M = $('tmarks'); M.innerHTML = '';
   const span = S.tEnd; const stepH = span > 172800 ? 24 : span > 43200 ? 6 : span > 14400 ? 2 : 1;
@@ -409,13 +429,14 @@ function kpi(label, value, hot) { return `<div class="${hot ? 'hot' : ''}"><b>${
 let lastUI = 0;
 function updateUI(force) {
   const now = performance.now(); if (!force && now - lastUI < 300) return; lastUI = now;
-  const t = run.t, st = run.cur ? run.cur.state : { MER: 0, E: 0, fountain: 0 };
+  const t = S.playT, st = src.at(t);
   $('tclock').textContent = 'T+' + fmtHMS(t);
   const { ms, off } = simDate(t); const d = new Date(ms + off * 3600000);
   $('lclock').textContent = `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()].slice(0, 3)} ${d.getUTCFullYear()} · ${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')} hora local`;
   $('tfill').style.width = Math.min(100, 100 * t / S.tEnd) + '%';
+  $('tcomp').style.width = Math.min(100, 100 * run.t / S.tEnd) + '%';
   // fase
-  const T = run.totals, P = st.MER > 50 ? src.plume(st.MER) : null;
+  const T = totalsAt(t), P = st.MER > 50 ? src.plume(st.MER) : null;
   let ph = 'Reposo', cls = '';
   if (st.active) { cls = 'hot'; ph = P && P.collapse ? 'Colapso de columna' : st.MER > 1e7 ? 'Fase pliniana' : st.MER > 2e6 ? 'Fase subpliniana' : st.fountain > 50 ? 'Fuente de lava' : st.MER > 50 ? 'Explosiones estrombolianas' : 'Efusión de lava'; }
   else if (T.lahar > 1e4 || T.lava > 1e3) { cls = 'warn'; ph = T.lahar > 1e4 ? 'Lahares activos' : 'Lava en movimiento'; }
@@ -424,17 +445,17 @@ function updateUI(force) {
   $('phase').textContent = ph; $('phase').className = 'phase ' + cls;
   // KPIs
   if ($('tab-fis').classList.contains('on') || force) {
-    const ex = run.exposure || { cut: 0, nb: 0, hit: 0, nh: 0, ashR: 0 };
+    const ex = T.exposure || { cut: 0, nb: 0, hit: 0, nh: 0, ashR: 0 };
     $('kpis').innerHTML =
       kpi('Columna (s.n.m.)', P ? (P.Ht / 1000).toFixed(1) + ' km' : '—', !!P) + kpi('Tasa de masa', st.MER > 50 ? fmtN(st.MER) + ' kg/s' : '—', st.MER > 50) +
       kpi('Efusión de lava', st.E > 0.1 ? st.E.toFixed(0) + ' m³/s' : '—', st.E > 0.1) + kpi('Lava T máx.', T.maxT > 0 ? (T.maxT - 273).toFixed(0) + ' °C' : '—', T.maxT > 0) +
       kpi('Lava en movimiento', (T.lava / 1e6).toFixed(2) + ' Mm³') + kpi('Lava solidificada', (T.depLava / 1e6).toFixed(2) + ' Mm³') +
       kpi('Agua de deshielo', (T.melt / 1e6).toFixed(2) + ' Mm³', T.melt > 1e4) + kpi('Lahar en movimiento', (T.lahar / 1e6).toFixed(2) + ' Mm³', T.lahar > 1e4) +
       kpi('Lahar: prof./vel. máx', `${T.maxH.toFixed(1)} m · ${T.maxU.toFixed(1)} m/s`) + kpi('Sedimento arrastrado', (T.sed / 1e6).toFixed(2) + ' Mm³') +
-      kpi('Corriente piroclástica', (T.pdc / 1e6).toFixed(2) + ' Mm³', T.pdc > 1e3) + kpi('Tefra emitida', fmtN(run.ashMass / 1e9) + ' Mt') +
+      kpi('Corriente piroclástica', (T.pdc / 1e6).toFixed(2) + ' Mm³', T.pdc > 1e3) + kpi('Tefra emitida', fmtN((T.ash || 0) / 1e9) + ' Mt') +
       kpi('Bosque en llamas', T.burning.toFixed(2) + ' km²', T.burning > 0) + kpi('Puentes / edificios', `${ex.cut} / ${ex.hit}`, ex.cut + ex.hit > 0) +
-      kpi('Paso de tiempo', run.dt.toFixed(2) + ' s') + kpi('Pasos calculados', fmtN(run.steps));
-    const sr = run.series, tMax = Math.max(t, 3600);
+      kpi('Calculado hasta', 'T+' + fmtT(run.t)) + kpi('Pasos del motor', fmtN(run.steps));
+    const sr = run.series, tMax = Math.max(run.t, 3600);
     lineChart($('cCol'), [{ data: sr.map(s => [s.t, s.H / 1000]), color: '#ff6a2b', label: 'Altura (km)' }, { data: sr.map(s => [s.t, s.MER > 0 ? Math.log10(s.MER) : 0]), color: '#9aa6b2', label: 'log₁₀ MER', axis: 1 }], { tMax, unit1: true, tNow: t });
     lineChart($('cVol'), [{ data: sr.map(s => [s.t, s.melt / 1e6]), color: '#7fd0ff', label: 'Deshielo' }, { data: sr.map(s => [s.t, s.lahar / 1e6]), color: '#d9a066', label: 'Lahar' }, { data: sr.map(s => [s.t, s.lava / 1e6]), color: '#ff6a2b', label: 'Lava' }, { data: sr.map(s => [s.t, s.pdc / 1e6]), color: '#c79bff', label: 'CDP' }], { tMax, tNow: t });
   }
@@ -451,7 +472,7 @@ function updateUI(force) {
     });
     const gs = series.gauges[S.gaugeSel] || [];
     $('gName').textContent = gaugePts[S.gaugeSel].name;
-    lineChart($('cGauge'), [{ data: gs.map(p => [p[0], p[4] || 0]), color: '#4fa3e0', label: 'Base' }, { data: gs.map(p => [p[0], p[1]]), color: '#d9a066', label: 'Nivel (m)' }, { data: gs.map(p => [p[0], p[3]]), color: '#ff6a2b', label: 'Lava' }, { data: gs.map(p => [p[0], p[2]]), color: '#c79bff', label: 'CDP' }], { tMax: Math.max(t, 3600), tNow: t });
+    lineChart($('cGauge'), [{ data: gs.map(p => [p[0], p[4] || 0]), color: '#4fa3e0', label: 'Base' }, { data: gs.map(p => [p[0], p[1]]), color: '#d9a066', label: 'Nivel (m)' }, { data: gs.map(p => [p[0], p[3]]), color: '#ff6a2b', label: 'Lava' }, { data: gs.map(p => [p[0], p[2]]), color: '#c79bff', label: 'CDP' }], { tMax: Math.max(run.t, 3600), tNow: t });
   }
   if (ens) updateEnsUI();
 }
@@ -573,7 +594,7 @@ function dms(v, neg, pos) { const a = Math.abs(v), d = Math.floor(a), m = Math.f
 
 function showProbe(x, y, live) {
   sol.makeSampler('probe', [{ x, y }]);
-  const r = sol.sample('probe')[0];
+  const r = player.sample('probe')[0];
   const [lat, lon] = geo.toLL(x, y), z = hAt(x, y);
   const v = src.vents[0], dist = Math.hypot(x - v.x, y - v.y), brg = (Math.atan2(x - v.x, y - v.y) * 180 / Math.PI + 360) % 360;
   const [i, j] = geo.cellOf(x, y), k = j * D.nx + i;
@@ -614,7 +635,7 @@ function showProbe(x, y, live) {
 const flowLabels = [];
 function updateFronts() {
   if (!flowLabels.length) for (let i = 0; i < 7; i++) { const it = labels.add('', 0, 0, 'flow', 3, 0); it.noOcc = true; it.hidden = true; flowLabels.push(it); }
-  const fr = run.sum && run.sum.spots && run.sum.spots.fronts;
+  const fr = vsum && vsum.spots && vsum.spots.fronts;
   const kmh = u => Math.round(u * 3.6);
   const list = [];
   if (fr && S.show.arrows) {
@@ -688,7 +709,7 @@ function onResize() {
 // Desgasificación: flujo de calor con ciclo de ~7 días, humedad y temperatura del aire en la cumbre
 const RH_MONTH = [0.55, 0.55, 0.62, 0.72, 0.82, 0.88, 0.88, 0.85, 0.80, 0.74, 0.66, 0.58];
 function fumState() {
-  const { ms, off } = simDate(run.t); const days = ms / 86400000;
+  const { ms, off } = simDate(S.playT); const days = ms / 86400000;
   const hourL = ((ms / 3600000 + off) % 24 + 24) % 24;
   const cyc = 1 + 0.55 * Math.sin(2 * Math.PI * days / 7.1 + 1.3) + 0.15 * Math.sin(2 * Math.PI * days / 1.9);
   const Q = Math.pow(10, S.fumQ) * Math.max(0.2, cyc);
@@ -698,7 +719,7 @@ function fumState() {
   return { Q, rh, Ta };
 }
 function fxWarm(sec) {
-  const st = run.cur ? run.cur.state : null; if (!st) return;
+  const st = src.at(S.playT); if (!st) return;
   const P = st.MER > 50 ? src.plume(st.MER) : null;
   const fum = fumState();
   for (let t = 0; t < sec; t += 0.5) fx.update(0.5, { src: st, plume: P, vents: src.vents, wind: src.wind, phreatic: S.scen === 'freatica', fumarole: st.active ? 2.5 : 1, fum });
@@ -716,36 +737,43 @@ let last = 0, fpsS = 60, simRateS = 0, lastStat = 0;
 function frame(now) {
   requestAnimationFrame(frame);
   const dtr = Math.min(0.1, (now - last) / 1000); last = now; fpsS = fpsS * 0.95 + (1 / Math.max(dtr, 1e-3)) * 0.05;
-  // simulación
-  let simAdv = 0;
-  if (S.playing && run.t < S.tEnd) {
-    const want = S.runTo != null ? 1e9 : S.speed * dtr;
-    const t0 = run.t;
-    const tLim = Math.min(S.tEnd, S.runTo != null ? S.runTo : run.t + want);
-    run.advance(S.maxSteps, tLim);
-    simAdv = run.t - t0;
-    if (S.runTo != null && run.t >= S.runTo - 1e-3) { S.runTo = null; fxWarm(90); }
-    if (run.t >= S.tEnd) { S.playing = false; $('play').textContent = '▶'; toast('Fin del período simulado. Explora los resultados con las capas de análisis.'); }
-    // presupuesto adaptativo de pasos por cuadro
-    if (S.capSteps) S.maxSteps = S.capSteps; else if (dtr > 0.045) S.maxSteps = Math.max(2, Math.floor(S.maxSteps * 0.85)); else if (dtr < 0.025) S.maxSteps = Math.min(mobile ? 60 : 240, Math.ceil(S.maxSteps * 1.08) + 1);
+  // 1) cálculo de la erupción a máxima velocidad, con presupuesto de tiempo por cuadro
+  if (S.computing) {
+    const t0 = performance.now(), budget = S.capSteps ? 1 : 40;
+    while (performance.now() - t0 < budget && run.t < S.tEnd) {
+      run.advance(S.capSteps || 160, S.tEnd);
+      run.readSummary(false);
+      if (run.t - S.lastRec >= 60 || run.t >= S.tEnd) { S.lastRec = run.t; computeRecord(); }
+    }
+    if (run.t >= S.tEnd - 1e-3) { S.computing = false; $('compute').hidden = true; toast('Erupción calculada completa: avanza o retrocede libremente en la línea de tiempo'); }
+    else { $('compute').hidden = false; $('cbar').style.width = (100 * run.t / S.tEnd) + '%'; $('ctxt').textContent = `Calculando la erupción… ${Math.floor(100 * run.t / S.tEnd)} % · T+${fmtT(run.t)} de ${fmtT(S.tEnd)}`; }
   }
-  simRateS = simRateS * 0.9 + (simAdv / Math.max(dtr, 1e-3)) * 0.1;
+  // 2) reproducción fluida de lo ya calculado
+  const prevT = S.playT;
+  if (S.playing) {
+    S.playT = Math.min(S.playT + S.speed * dtr, run.t);
+    if (S.playT >= S.tEnd - 1e-3 && !S.computing) { S.playing = false; $('play').textContent = '▶'; toast('Fin del período simulado. Explora los resultados con las capas de análisis.'); }
+  }
+  if (S.playT !== prevT) playEvents(prevT, S.playT);
+  const simAdv = S.playT - prevT;
   if (ens && ens.active) ens.tick(S.playing ? 25 : 90);
-  if (now - lastRead > (S.playing ? 450 : 900)) { lastRead = now; readback(false); updateFronts(); }
+  if (now - lastRead > (S.playing ? 400 : 900)) { lastRead = now; readback(false); updateFronts(); }
   // render
   stepCam();
-  terr.bind(sol); ovl.bind(sol); forest.bind(sol);
+  // la escena muestra siempre la reproducción en el instante elegido (no el cálculo en curso)
+  if (player.t !== S.playT || S.computing) player.update(S.playT, Math.max(run.t, 1), src.tEnd + 3600);
+  terr.bind(player); ovl.bind(player); forest.bind(player);
   { const gx = controls.target.x, gy = -controls.target.z; const alt = camera.position.y / S.ex * 1000 - hAt(camera.position.x, -camera.position.z);
     forest.update(gx, gy, Math.max(alt, camera.position.distanceTo(controls.target) * 1000 * 0.6)); }
-  const sh = terr.shared; sh.uTime.value = now / 1000; sh.uCamPos.value.copy(camera.position); terr.U.uSimT.value = run.t;
+  const sh = terr.shared; sh.uTime.value = now / 1000; sh.uCamPos.value.copy(camera.position); terr.U.uSimT.value = S.playT;
   updateLighting();
   if (S.show.shadows) terr.updateShadows(renderer);
-  terr.FU.uFlowVis.value = clamp(Math.sqrt(Math.max(1, S.playing ? simRateS : 1)) * 1.5, 2, 30);
-  const st = run.cur ? run.cur.state : null;
+  terr.FU.uFlowVis.value = clamp(Math.sqrt(Math.max(1, S.playing ? S.speed : 1)) * 1.5, 2, 30);
+  const st = src.at(S.playT);
   updateGlow(st);
   if (S.show.fx) {
     const P = st && st.MER > 50 ? src.plume(st.MER) : null;
-    const visSpeed = clamp(S.playing ? Math.sqrt(Math.max(1, simRateS)) * 0.6 : 1, 0.25, 6);
+    const visSpeed = clamp(S.playing ? Math.sqrt(Math.max(1, S.speed)) * 0.5 : 1, 0.5, 5);
     fx.update(dtr * visSpeed, { src: st, plume: P, vents: src.vents, wind: src.wind, phreatic: S.scen === 'freatica', fumarole: st && st.active ? 2.5 : 1, fum: fumState() });
     fx.write(camera, S.ex);
   }
@@ -754,7 +782,7 @@ function frame(now) {
     const cp = camera.position, v = src.vents[0];
     const dk = (x, y, z) => Math.hypot(cp.x - x, (cp.y - z / 1000 * S.ex) / S.ex, cp.z + y);
     const dVent = dk(v.x, v.y, hAt(v.x, v.y));
-    const sp = (run.sum && run.sum.spots) || { mud: [], lava: [] };
+    const sp = (vsum && vsum.spots) || { mud: [], lava: [] };
     let mud = 0, dMud = 99, lava = 0, dLava = 99;
     for (const m of sp.mud) { const d = dk(m.x, m.y, hAt(m.x, m.y)); if (d < dMud) { dMud = d; mud = Math.min(1, m.w / 200); } }
     for (const m of sp.lava) { const d = dk(m.x, m.y, hAt(m.x, m.y)); if (d < dLava) { dLava = d; lava = Math.min(1, m.w / 30); } }
@@ -765,5 +793,5 @@ function frame(now) {
   updateUI(false);
   // resolución dinámica: mantiene la fluidez bajando la densidad de píxeles cuando cae el cuadro por segundo
   dynRes(now);
-  if (now - lastStat > 250) { lastStat = now; updateStatus(fpsS); $('rate').textContent = S.playing ? `${simRateS >= 60 ? (simRateS / 60).toFixed(1) + ' min' : simRateS.toFixed(1) + ' s'} sim/s` : 'en pausa'; }
+  if (now - lastStat > 250) { lastStat = now; updateStatus(fpsS); $('rate').textContent = S.playing ? (S.playT >= run.t - 1 && S.computing ? 'esperando cálculo…' : `${S.speed >= 60 ? (S.speed / 60).toFixed(0) + ' min' : S.speed + ' s'} sim/s`) : 'en pausa'; }
 }

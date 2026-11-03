@@ -122,14 +122,15 @@
 <div class="timeline" id="timeline">
   <button id="play" class="play" aria-label="Iniciar">▶</button>
   <button id="reset" title="Reiniciar" aria-label="Reiniciar">↺</button>
-  <div class="track" id="track"><div class="fill" id="tfill"></div><div class="marks" id="tmarks"></div><div class="tip" id="ttip" hidden></div></div>
+  <div class="track" id="track"><div class="comp" id="tcomp"></div><div class="fill" id="tfill"></div><div class="marks" id="tmarks"></div><div class="tip" id="ttip" hidden></div></div>
   <select id="speed" aria-label="Velocidad">
-    <option value="1">Tiempo real</option><option value="10">×10</option><option value="60">1 min/s</option><option value="300" selected>5 min/s</option><option value="900">15 min/s</option><option value="3600">1 h/s</option><option value="1e9">Máximo</option>
+    <option value="1">Tiempo real</option><option value="10">×10</option><option value="60" selected>1 min/s</option><option value="300">5 min/s</option><option value="900">15 min/s</option><option value="3600">1 h/s</option><option value="1e9">Máximo</option>
   </select>
   <span class="rate" id="rate">—</span>
 </div>
 
 <div class="status" id="status"><span id="sLL">—</span><span id="sZ">—</span><span id="sAlt">—</span><span class="scale"><i id="scaleBar"></i><b id="scaleTxt"></b></span><span id="sPerf">—</span></div>
+<div class="compute" id="compute" hidden><span id="ctxt">Calculando la erupción…</span><div class="cbar"><i id="cbar"></i></div><small>Puedes reproducir lo ya calculado mientras termina.</small></div>
 <div class="probe" id="probe" hidden></div>
 <div class="toasts" id="toasts"></div>
 <button class="panelbtn l" id="tglL" aria-label="Panel izquierdo">☰</button>

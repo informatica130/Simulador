@@ -164,3 +164,9 @@ body.picking canvas#gl{cursor:crosshair}
 .lbl.flow.lahar{color:#ffb547}.lbl.flow.lava{color:#ff6a2b}.lbl.flow.pdc{color:#d3a6ff}
 .lbl.gauge.alarm{color:#ff8a7a}
 .views button.follow{color:#ffcf8a;border-color:rgba(255,160,60,.4)}
+
+.track .comp{position:absolute;left:0;top:12px;height:4px;background:rgba(255,255,255,.28);border-radius:2px;width:0}
+.compute{position:fixed;left:50%;top:74px;transform:translateX(-50%);z-index:6;background:var(--glass2);border:1px solid var(--line2);border-radius:var(--r);padding:10px 16px;min-width:340px;text-align:center;font-size:12.5px}
+.compute .cbar{height:5px;background:rgba(255,255,255,.1);border-radius:3px;margin:7px 0 5px;overflow:hidden}.compute .cbar i{display:block;height:100%;width:0;background:var(--acc)}
+.compute small{color:var(--tx3)}
+.toasts{top:150px}

@@ -73,8 +73,9 @@ export class Runner {
     this.lastAsh = this.t;
   }
   // Lee el resumen 8×8 y ajusta el paso de tiempo
-  readSummary(wantSpots = false) {
-    const { buf, bw, bh } = this.sol.summary();
+  // set: otro conjunto de texturas (la reproducción); en ese caso no se toca el paso de tiempo ni los totales del cálculo
+  readSummary(wantSpots = false, set = null) {
+    const { buf, bw, bh } = set ? set.summary() : this.sol.summary();
     const A = this.sol.dx * this.sol.dx;
     let mEx = 0, sH = 0, sS = 0, sL = 0, sP = 0, mH = 0, mT = 0, mP = 0, cont = 0, burn = 0, mom = 0, melt = 0, dM = 0, dL = 0, mU = 0, pU = 0;
     const spots = wantSpots ? { lavaSnow: [], pdc: [], fire: [], mud: [], lava: [], hot: [], lah: [], lav: [], pd: [] } : null;
@@ -101,11 +102,13 @@ export class Runner {
     // paso de tiempo: CFL con la onda de gravedad y la advección
     const c = Math.sqrt(9.81 * Math.max(mH, mP, 0.5)) + Math.max(mU, pU * 1.5);
     const mud = sH * A > 200 || sS * A > 50, pdc = sP * A > 50, lava = sL * A > 10;
-    let dt = 0.55 * this.sol.dx / c;
-    dt = Math.min(dt, mud ? 2.0 : lava ? 5 : 6, pdc ? 0.4 : 99);
-    this.dt = Math.max(0.12, dt);
-    this.limits = { h: mH, u: mU, hp: mP, up: pU, mud, pdc, lava };
-    const T = this.totals;
+    if (!set) {
+      let dt = 0.55 * this.sol.dx / c;
+      dt = Math.min(dt, mud ? 2.0 : lava ? 5 : 6, pdc ? 0.4 : 99);
+      this.dt = Math.max(0.12, dt);
+      this.limits = { h: mH, u: mU, hp: mP, up: pU, mud, pdc, lava };
+    }
+    const T = set ? {} : this.totals;
     T.lahar = sH * A; T.sed = sS * A; T.lava = sL * A; T.pdc = sP * A; T.melt = melt * A; T.depMud = dM * A; T.depLava = dL * A;
     T.burning = burn * A / 1e6; T.maxT = mT; T.maxH = mEx; T.maxU = mU; T.ash = this.ashMass; T.lavaErupted = this.src.cumLavaVol(this.t) / 0.85;
     if (spots) {
@@ -118,14 +121,15 @@ export class Runner {
       const sel = []; for (const h of spots.hot) { if (sel.every(s => Math.hypot(s.x - h.x, s.y - h.y) > 1.2)) sel.push(h); if (sel.length >= 5) break; }
       spots.hot = sel;
     }
-    this.sum = { spots, totals: { ...T } };
-    return this.sum;
+    const out = { spots, totals: { ...T } };
+    if (!set) this.sum = out;
+    return out;
   }
   record(extra) {
     const s = this.cur ? this.cur.state : { MER: 0, E: 0 };
     const P = s.MER > 50 ? this.src.plume(s.MER) : null;
     const T = this.totals;
-    this.series.push({ t: this.t, MER: s.MER, E: s.E, H: P ? P.Ht : 0, lahar: T.lahar, lava: T.lava, melt: T.melt, pdc: T.pdc, ash: this.ashMass, burn: T.burning, maxT: T.maxT, ...extra });
-    if (this.series.length > 4000) this.series.splice(0, this.series.length - 4000);
+    this.series.push({ ...T, t: this.t, MER: s.MER, E: s.E, H: P ? P.Ht : 0, ash: this.ashMass, burn: T.burning, steps: this.steps, dt: this.dt, ...extra });
+    if (this.series.length > 20000) this.series.splice(0, this.series.length - 20000);
   }
 }

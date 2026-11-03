@@ -340,6 +340,75 @@ const INITFIRE = HDR + /* glsl */`uniform sampler2D tStatic; out vec4 o; void ma
 const CLEAR = HDR + /* glsl */`layout(location = 0) out vec4 o0; layout(location = 1) out vec4 o1; void main(){ o0 = vec4(0.0); o1 = vec4(0.0); }`;
 const CLEAR1 = HDR + /* glsl */`out vec4 o; void main(){ o = vec4(0.0); }`;
 
+// ----------------------------- historial por celda ---------------------
+// H1 = (t del máximo del lahar, último t con lahar, vx, vy en el máximo)
+// H2 = (último t con lava, último t con CDP, vx, vy de lava o CDP)
+const HIST = HDR + /* glsl */`
+uniform sampler2D tFluid, tFluidP, tFluxA, tFluxB, tStat, tBase, tH1, tH2;
+layout(location = 0) out vec4 o1; layout(location = 1) out vec4 o2;
+void main(){
+  ivec2 p = P(); vec4 fl = F(tFluid, p), fp = F(tFluidP, p), st = F(tStat, p), b = F(tBase, p), h1 = F(tH1, p), h2 = F(tH2, p);
+  vec4 qa = F(tFluxA, p), qaW = p.x > 0 ? F(tFluxA, p - ivec2(1, 0)) : vec4(0.0), qaN = p.y > 0 ? F(tFluxA, p - ivec2(0, 1)) : vec4(0.0);
+  vec4 qb = F(tFluxB, p), qbW = p.x > 0 ? F(tFluxB, p - ivec2(1, 0)) : vec4(0.0), qbN = p.y > 0 ? F(tFluxB, p - ivec2(0, 1)) : vec4(0.0);
+  float ex = fl.x - b.r * 1.08 - 0.03;
+  if (ex > 0.1) { h1.y = uT; if (ex >= st.x - 1e-3) { h1.x = uT; h1.zw = vec2(0.5 * (qaW.x + qa.x), 0.5 * (qaN.y + qa.y)) / max(fl.x, 0.05); } }
+  if (fl.z > 0.05) { h2.x = uT; h2.zw = vec2(0.5 * (qaW.z + qa.z), 0.5 * (qaN.w + qa.w)) / max(fl.z, 0.05); }
+  if (fp.x > 0.05) { h2.y = uT; if (fl.z <= 0.05) h2.zw = vec2(0.5 * (qbW.x + qb.x), 0.5 * (qbN.y + qb.y)) / max(fp.x, 0.05); }
+  o1 = h1; o2 = h2;
+}`;
+
+// ----------------------------- reconstrucción para la reproducción --------
+// A partir de llegada, máximo, tiempo del máximo, fin y dirección de cada celda se
+// rearma el estado en cualquier instante t, sin volver a simular.
+const RECON1 = HDR + /* glsl */`
+uniform sampler2D tStatF, tFluidPF, tTerrF, tH1, tH2, tBase, tStatic;
+uniform float uPT, uTnow;
+layout(location = 0) out vec4 oF; layout(location = 1) out vec4 oP; layout(location = 2) out vec4 oT; layout(location = 3) out vec4 oS;
+void main(){
+  ivec2 p = P(); float t = uPT;
+  vec4 st = F(tStatF, p), fpF = F(tFluidPF, p), trF = F(tTerrF, p), h1 = F(tH1, p), h2 = F(tH2, p), b = F(tBase, p), s0 = F(tStatic, p);
+  // lahar: subida rápida al máximo, meseta que decae y recesión
+  float ex = 0.0, rise = 0.0, aM = st.y - 1.0; bool inM = st.y > 0.0 && t >= aM;
+  if (inM) { float tp = max(h1.x, aM + 30.0), te = max(h1.y, tp + 60.0);
+    rise = smoothstep(aM, tp, t);
+    float mid = mix(1.0, 0.5, smoothstep(tp, te, t));
+    float rec = 1.0 - smoothstep(te, te + max(300.0, (te - aM) * 0.4), t);
+    ex = st.x * rise * mid * rec; }
+  float hm = b.r + max(ex, 0.0);
+  float cv = ex > 0.05 ? clamp(0.5 * ex / (ex + b.r + 0.2), 0.1, 0.5) : 0.0;
+  // lava: avanza, se mantiene caliente mientras se mueve y luego se solidifica (pasa al relieve)
+  float hl = 0.0, T = 0.0, aL = st.w - 1.0; bool inL = st.w > 0.0 && t >= aL;
+  if (inL) { float te = max(h2.x, aL + 300.0);
+    if (t <= te + 60.0) { hl = st.z * smoothstep(aL, aL + max(240.0, (te - aL) * 0.2), t); T = mix(1418.0, 1240.0, clamp((t - aL) / max(te - aL, 1.0), 0.0, 1.0)); } }
+  // corriente piroclástica: pulso breve
+  float hp = 0.0, aP = fpF.z - 1.0; bool inP = fpF.z > 0.0 && t >= aP;
+  if (inP) { float te = max(h2.y, aP + 60.0); hp = fpF.w * smoothstep(aP, aP + 20.0, t) * (1.0 - smoothstep(te, te + 180.0, t)); }
+  oF = vec4(hm, cv, hl, T);
+  oP = vec4(hp, hp > 0.0 ? 650.0 : 0.0, inP ? fpF.z : 0.0, inP ? fpF.w * smoothstep(aP, aP + 20.0, t) : 0.0);
+  // cambios del relieve (depósitos, fusión de nieve y hielo) proporcionales al avance
+  float tA = 1e9; if (st.y > 0.0) tA = min(tA, aM); if (st.w > 0.0) tA = min(tA, aL); if (fpF.z > 0.0) tA = min(tA, aP);
+  float tE = max(max(h1.y, h2.x), h2.y);
+  float fT = clamp(t / max(uTnow, 1.0), 0.0, 1.0);
+  float f = tA < 1e8 ? clamp((t - tA) / max(tE - tA, 900.0), 0.0, 1.0) : fT;
+  oT = vec4(s0.x + (trF.x - s0.x) * f, mix(s0.y, trF.y, tA < 1e8 ? f : fT), inM ? trF.z : 0.0, inM ? trF.w * rise : 0.0);
+  oS = vec4(inM ? st.x * rise : 0.0, inM ? st.y : 0.0, inL ? st.z : 0.0, inL ? st.w : 0.0);
+}`;
+const RECON2 = HDR + /* glsl */`
+uniform sampler2D tFl, tFp, tH1, tH2;
+layout(location = 0) out vec4 oA; layout(location = 1) out vec4 oB;
+void main(){ ivec2 p = P(); vec4 fl = F(tFl, p), fp = F(tFp, p), h1 = F(tH1, p), h2 = F(tH2, p);
+  float ex = fl.y > 0.0 ? fl.x : 0.0;
+  oA = vec4(h1.z * ex, h1.w * ex, h2.z * fl.z, h2.w * fl.z); oB = vec4(h2.z * fp.x, h2.w * fp.x, 0.0, 0.0); }`;
+const RECON3 = HDR + /* glsl */`
+uniform sampler2D tAshF, tFireF; uniform float uPT, uAshEnd;
+layout(location = 0) out vec4 oA; layout(location = 1) out vec4 oR;
+void main(){ ivec2 p = P(); float t = uPT; vec4 a = F(tAshF, p), fi = F(tFireF, p);
+  float aa = a.y - 1.0;
+  float fa = a.y > 0.0 ? clamp((t - aa) / max(uAshEnd - aa, 600.0), 0.0, 1.0) : clamp(t / max(uAshEnd, 1.0), 0.0, 1.0);
+  oA = vec4(a.x * fa, (a.y > 0.0 && t >= aa) ? a.y : 0.0, a.z * fa, 0.0);
+  float tg = fi.w - 1.0; bool ig = fi.w > 0.0 && t >= tg;
+  oR = vec4(fi.x, (ig && t < tg + 1800.0) ? 1.0 : 0.0, ig ? fi.z * clamp((t - tg) / 1200.0, 0.0, 1.0) : 0.0, ig ? fi.w : 0.0); }`;
+
 // =====================================================================
 export class Solver {
   constructor(renderer, D, { scale = 1 } = {}) {
@@ -358,6 +427,8 @@ export class Solver {
     this.mrtF = [new THREE.WebGLMultipleRenderTargets(W, H, 2, opt), new THREE.WebGLMultipleRenderTargets(W, H, 2, opt)];
     for (const m of [...this.mrtU, ...this.mrtF]) for (const t of m.texture) { t.type = THREE.FloatType; t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; }
     this.fire = [new THREE.WebGLRenderTarget(W, H, opt), new THREE.WebGLRenderTarget(W, H, opt)];
+    this.hist = [new THREE.WebGLMultipleRenderTargets(W, H, 2, opt), new THREE.WebGLMultipleRenderTargets(W, H, 2, opt)]; this.ch = 0;
+    for (const m of this.hist) for (const t of m.texture) { t.type = THREE.FloatType; t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; }
     this.ash = [new THREE.WebGLRenderTarget(W, H, opt), new THREE.WebGLRenderTarget(W, H, opt)];
     this.bw = Math.ceil(W / 8); this.bh = Math.ceil(H / 8);
     this.sumRT = new THREE.WebGLRenderTarget(this.bw * 4, this.bh, opt);
@@ -393,6 +464,8 @@ export class Solver {
     this.mRestF = mk(RESTF, { tSnapQ: { value: this.snapQ.texture }, uMode: { value: 0 } });
     this.mInitFire = mk(INITFIRE, { tStatic: { value: this.staticTex } });
     this.mClear2 = mk(CLEAR, {}); this.mClear1 = mk(CLEAR1, {});
+    this.mHist = mk(HIST, { tFluid: T(), tFluidP: T(), tFluxA: T(), tFluxB: T(), tStat: T(), tBase: { value: this.baseRT.texture }, tH1: T(), tH2: T() });
+    this.mk = mk;
     this.samplers = new Map();
   }
   // Coordenadas mundo (km) ↔ celda del solver
@@ -412,6 +485,7 @@ export class Solver {
   pass(mat, target) { const ac = this.r.autoClear; this.r.autoClear = false; this.quad.material = mat; this.r.setRenderTarget(target); this.r.render(this.scene, this.cam); this.r.autoClear = ac; }
   get U() { return this.mrtU[this.cu].texture; }    // [fluid, fluidP, terr, stat]
   get FX() { return this.mrtF[this.cf].texture; }   // [fluxA, fluxB]
+  get H() { return this.hist[this.ch].texture; }     // [H1, H2]
   get fireTex() { return this.fire[this.cfi].texture; }
   get ashTex() { return this.ash[this.ca].texture; }
   get baseTex() { return this.baseRT.texture; }
@@ -439,6 +513,7 @@ export class Solver {
     this.mInit.uniforms.uMode.value = this.hasSnap ? 1 : 0; this.mRestF.uniforms.uMode.value = this.hasSnap ? 1 : 0;
     for (const m of this.mrtU) this.pass(this.mInit, m);
     for (const m of this.mrtF) this.pass(this.mRestF, m);
+    for (const m of this.hist) this.pass(this.mClear2, m); this.ch = 0;
     for (const f of this.fire) this.pass(this.mInitFire, f);
     for (const a of this.ash) this.pass(this.mClear1, a);
     this.cu = this.cf = this.cfi = this.ca = 0; this.stepN = 0; this.t = 0;
@@ -476,6 +551,10 @@ export class Solver {
     um.tFluxA.value = FXn[0]; um.tFluxB.value = FXn[1]; um.tAsh.value = this.ashTex;
     this.pass(this.mUpd, this.mrtU[1 - this.cu]); this.cu = 1 - this.cu;
     this.stepN++;
+    // historial por celda (llegada, máximo, fin y dirección) para la reproducción posterior
+    { const U2 = this.mrtU[this.cu].texture, h = this.mHist.uniforms, Hc = this.hist[this.ch].texture;
+      h.uT.value = t; h.tFluid.value = U2[0]; h.tFluidP.value = U2[1]; h.tStat.value = U2[3]; h.tFluxA.value = FXn[0]; h.tFluxB.value = FXn[1]; h.tH1.value = Hc[0]; h.tH2.value = Hc[1];
+      this.pass(this.mHist, this.hist[1 - this.ch]); this.ch = 1 - this.ch; }
     if (this.stepN % 2 === 0) {
       const U2 = this.mrtU[this.cu].texture, f = this.mFire.uniforms;
       f.uDt.value = dt * 2; f.uT.value = t; f.tFire.value = this.fireTex; f.tFluid.value = U2[0]; f.tFluidP.value = U2[1]; f.tTerr.value = U2[2]; f.uStep.value = this.stepN;
@@ -500,9 +579,9 @@ export class Solver {
     }
   }
   // Lectura de resumen (bloques 8×8)
-  summary() {
-    const U = this.U, FXo = this.FX, m = this.mSum.uniforms;
-    m.tTerr.value = U[2]; m.tFluid.value = U[0]; m.tFluidP.value = U[1]; m.tStat.value = U[3]; m.tFluxA.value = FXo[0]; m.tFluxB.value = FXo[1]; m.tFire.value = this.fireTex;
+  summary(set) {
+    const S = set || this, U = S.U, FXo = S.FX, m = this.mSum.uniforms;
+    m.tTerr.value = U[2]; m.tFluid.value = U[0]; m.tFluidP.value = U[1]; m.tStat.value = U[3]; m.tFluxA.value = FXo[0]; m.tFluxB.value = FXo[1]; m.tFire.value = S.fireTex;
     this.pass(this.mSum, this.sumRT);
     this.r.readRenderTargetPixels(this.sumRT, 0, 0, this.bw * 4, this.bh, this.sumBuf);
     return { buf: this.sumBuf, bw: this.bw, bh: this.bh };
@@ -517,10 +596,10 @@ export class Solver {
     const old = this.samplers.get(name); if (old) { old.tex.dispose(); old.rt.dispose(); }
     this.samplers.set(name, s); return s;
   }
-  sample(name, accTex) {
+  sample(name, accTex, set) {
     const s = this.samplers.get(name); if (!s) return null;
-    const U = this.U, m = this.mSample.uniforms;
-    m.tPts.value = s.tex; m.t0.value = U[3]; m.t1.value = U[0]; m.t2.value = U[1]; m.t3.value = this.ashTex; m.t4.value = U[2]; m.t5.value = accTex || this.fireTex; m.t6.value = this.baseTex;
+    const S = set || this, U = S.U, m = this.mSample.uniforms;
+    m.tPts.value = s.tex; m.t0.value = U[3]; m.t1.value = U[0]; m.t2.value = U[1]; m.t3.value = S.ashTex; m.t4.value = U[2]; m.t5.value = accTex || S.fireTex; m.t6.value = this.baseTex;
     m.uN.value.set(this.nx, this.ny);
     this.pass(this.mSample, s.rt);
     this.r.readRenderTargetPixels(s.rt, 0, 0, s.W, 7, s.buf);
@@ -537,4 +616,44 @@ export class Solver {
     this.staticTex.dispose();
     for (const s of this.samplers.values()) { s.tex.dispose(); s.rt.dispose(); }
   }
+}
+
+
+// =====================================================================
+//  Reproducción: rearma el estado del motor en cualquier instante a partir
+//  del historial calculado. Expone las mismas texturas que el solver, así
+//  que el terreno, los fluidos, el bosque y los sensores funcionan igual.
+// =====================================================================
+export class Player {
+  constructor(sol) {
+    this.sol = sol; const W = sol.nx, H = sol.ny;
+    const opt = { type: THREE.FloatType, format: THREE.RGBAFormat, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false, stencilBuffer: false, generateMipmaps: false };
+    const mrt = n => { const m = new THREE.WebGLMultipleRenderTargets(W, H, n, opt); for (const t of m.texture) { t.type = THREE.FloatType; t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; } return m; };
+    this.m1 = mrt(4); this.m2 = mrt(2); this.m3 = mrt(2);
+    const T = () => ({ value: null });
+    this.r1 = sol.mk(RECON1, { tStatF: T(), tFluidPF: T(), tTerrF: T(), tH1: T(), tH2: T(), tBase: { value: sol.baseRT.texture }, tStatic: { value: sol.staticTex }, uPT: { value: 0 }, uTnow: { value: 1 } });
+    this.r2 = sol.mk(RECON2, { tFl: T(), tFp: T(), tH1: T(), tH2: T() });
+    this.r3 = sol.mk(RECON3, { tAshF: T(), tFireF: T(), uPT: { value: 0 }, uAshEnd: { value: 3600 } });
+    this.t = -1;
+    for (const k of ['nx', 'ny', 's', 'dx', 'cellKm', 'staticTex']) this[k] = sol[k];
+  }
+  get U() { return this.m1.texture; }
+  get FX() { return this.m2.texture; }
+  get ashTex() { return this.m3.texture[0]; }
+  get fireTex() { return this.m3.texture[1]; }
+  get baseTex() { return this.sol.baseTex; }
+  world(i, j) { return this.sol.world(i, j); }
+  cell(x, y) { return this.sol.cell(x, y); }
+  update(t, tNow, tAshEnd) {
+    const sol = this.sol, U = sol.U, H = sol.H, prev = sol.r.getRenderTarget();
+    const a = this.r1.uniforms; a.tStatF.value = U[3]; a.tFluidPF.value = U[1]; a.tTerrF.value = U[2]; a.tH1.value = H[0]; a.tH2.value = H[1]; a.uPT.value = t; a.uTnow.value = tNow;
+    sol.pass(this.r1, this.m1);
+    const b = this.r2.uniforms; b.tFl.value = this.m1.texture[0]; b.tFp.value = this.m1.texture[1]; b.tH1.value = H[0]; b.tH2.value = H[1];
+    sol.pass(this.r2, this.m2);
+    const c = this.r3.uniforms; c.tAshF.value = sol.ashTex; c.tFireF.value = sol.fireTex; c.uPT.value = t; c.uAshEnd.value = tAshEnd;
+    sol.pass(this.r3, this.m3);
+    sol.r.setRenderTarget(prev); this.t = t;
+  }
+  summary() { return this.sol.summary(this); }
+  sample(name, accTex) { return this.sol.sample(name, accTex, this); }
 }
