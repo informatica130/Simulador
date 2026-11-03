@@ -320,7 +320,7 @@ void main(){
   float dist = length(uCamPos - vW);
   vec3 V = normalize(uCamPos - vW);
   vec3 col; float alpha = 1.0;
-  bool lahar = !lava && !pdc && (vEx > 0.12 || cv > 0.05);
+  bool lahar = !lava && !pdc && (vEx > 0.05 || cv > 0.04);
   if (lava) {
     float n = flowTex(vXY, vVel, 70.0, 0.05);
     float crk = 1.0 - smoothstep(0.015, 0.07, abs(n - 0.5));
@@ -365,8 +365,8 @@ void main(){
   // --- indicadores: color del fenómeno resaltado desde lejos, borde y flechas de movimiento
   if (uArrows > 0.5 && (lava || pdc || lahar)) {
     vec3 kc = lava ? vec3(1.0, 0.55, 0.12) : pdc ? vec3(0.78, 0.52, 1.0) : vec3(1.0, 0.68, 0.22);
-    float far = smoothstep(3.0, 14.0, dist);
-    col = mix(col, kc * (uSunCol * 0.25 + uSkyCol + 0.25), far * 0.55);
+    float far = max(0.3, smoothstep(1.0, 6.0, dist));
+    col = mix(col, kc * (uSunCol * 0.25 + uSkyCol + 0.3), far * 0.6);
     float depth = lava ? hl : pdc ? vHp : vEx;
     float edge = 1.0 - smoothstep(0.05, 0.6, depth);
     col = mix(col, kc * 1.2, edge * 0.5);
