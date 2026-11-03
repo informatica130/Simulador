@@ -16,6 +16,13 @@ export class EruptionSource {
     this.wind = { ...sc.wind, ...(opts.wind || {}) };
     this.ventZ = opts.ventZ || 3000;
     this.vents = buildVents(sc, opts.vents);
+    // Puntos de desborde de lava: la columna sale de la cumbre, pero la lava rebasa el borde del
+    // cráter hacia el lado que indique el registro histórico (o el usuario)
+    const ov = opts.overflow != null ? opts.overflow : sc.overflow;
+    const v0 = this.vents[0];
+    if (ov && ov.length && !(opts.vents && opts.vents.length > 1) && !sc.fissure) {
+      this.lavaV = ov.map(az => { const a = az * Math.PI / 180; return { x: v0.x + Math.sin(a) * 0.32, y: v0.y + Math.cos(a) * 0.32, r: 0.13 }; });
+    } else this.lavaV = this.vents;
     this.w0 = sc.w0; this.T0 = opts.T0 || sc.T0;
     this.tgsd = sc.tgsd;
     this.phases = sc.phases;
@@ -94,7 +101,7 @@ export class EruptionSource {
   // Fuentes de lava por boca (m³/s DRE → volumen de lava con 15 % vesículas)
   lavaVents(t) {
     const s = this.at(t); if (s.E <= 0) return [];
-    const n = this.vents.length; return this.vents.map(v => ({ ...v, E: s.E / n / 0.85 }));
+    const n = this.lavaV.length; return this.lavaV.map(v => ({ ...v, E: s.E / n / 0.85 }));
   }
   // Flujo de CDP (m³/s de corriente densa, ρ ≈ 1100 kg/m³)
   pdc(t) {

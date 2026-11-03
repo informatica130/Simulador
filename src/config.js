@@ -71,7 +71,7 @@ export const SCENARIOS = {
   e2008: {
     name: '1 ene 2008 · Estromboliana violenta', short: 'Ene 2008', vei: 'IEV 3', date: [2008, 1, 1, 17.9],
     desc: 'Fuente de lava y columna de 6–8 km. La lava desbordó el borde occidental y abrió canales en el glaciar; lahares pequeños por el Captrén y el Truful-Truful. Comenzó casi sin aviso.',
-    vents: [{ x: 0.03, y: 0.0, r: 0.15 }], w0: 0.025, T0: 1418, tgsd: [0.5, 1.6],
+    overflow: [270], vents: [{ x: 0.03, y: 0.0, r: 0.15 }], w0: 0.025, T0: 1418, tgsd: [0.5, 1.6],
     wind: { to: 100, speed: 22 },
     phases: [
       { t0: 0, t1: 360, MER: 6e5, fountain: 450, ballistic: 0.8, pulse: true },
@@ -82,7 +82,7 @@ export const SCENARIOS = {
   e2009: {
     name: 'Abr 2009 · Fisura y fuente de lava', short: 'Abr 2009', vei: 'IEV 3', date: [2009, 4, 1, 5.0],
     desc: 'Fuente de lava de cientos de metros y dos coladas: una hacia el SO (~4,5 km) que derritió el glaciar y generó un lahar al Calbuco, y otra al N.',
-    vents: [{ x: 0.03, y: 0.0, r: 0.18 }], w0: 0.02, T0: 1423, tgsd: [0.0, 1.8],
+    overflow: [225, 0], vents: [{ x: 0.03, y: 0.0, r: 0.18 }], w0: 0.02, T0: 1423, tgsd: [0.0, 1.8],
     wind: { to: 80, speed: 18 },
     phases: [
       { t0: 0, t1: 600, MER: 3e5, fountain: 600, ballistic: 0.6, pulse: true },
@@ -92,7 +92,7 @@ export const SCENARIOS = {
   e1994: {
     name: 'May 1994 · Estromboliana con mucha nieve', short: 'May 1994', vei: 'IEV 2', date: [1994, 5, 17, 6.0],
     desc: 'Erupción estromboliana a fines de otoño, con nieve fresca: el deshielo generó un lahar por el Calbuco–Quepe que destruyó 5 puentes y llegó a Vilcún (43 km al O).',
-    vents: [{ x: 0.03, y: 0.0, r: 0.15 }], w0: 0.025, T0: 1418, tgsd: [0.5, 1.5],
+    overflow: [255], vents: [{ x: 0.03, y: 0.0, r: 0.15 }], w0: 0.025, T0: 1418, tgsd: [0.5, 1.5],
     wind: { to: 95, speed: 25 },
     phases: [
       { t0: 0, t1: 720, MER: 2.5e5, fountain: 300, ballistic: 0.7, pulse: true },
@@ -122,7 +122,7 @@ export const SCENARIOS = {
   e1640: {
     name: '1640 · Subpliniana (IEV 4)', short: '1640', vei: 'IEV 4', date: [1640, 2, 23, 14],
     desc: 'La mayor erupción histórica: columna sostenida de 15–20 km, caída de escoria y lapilli al E, colapsos parciales con corrientes piroclásticas por los valles altos y lahares grandes.',
-    vents: [{ x: 0.03, y: 0.0, r: 0.25 }], w0: 0.035, T0: 1398, tgsd: [1.2, 2.0],
+    overflow: [90], vents: [{ x: 0.03, y: 0.0, r: 0.25 }], w0: 0.035, T0: 1398, tgsd: [1.2, 2.0],
     wind: { to: 100, speed: 30 },
     phases: [
       { t0: 0, t1: 25, MER: 8e5, ballistic: 1 },
@@ -156,7 +156,7 @@ export const SCENARIOS = {
   custom: {
     name: 'Personalizado', short: 'Personal', vei: '—', date: [2026, 11, 2, 18],
     desc: 'Coloca tú la boca eruptiva o la fisura sobre el mapa y ajusta la tasa, la duración, la nieve y el viento.',
-    vents: [{ x: 0.03, y: 0.0, r: 0.15 }], w0: 0.03, T0: 1423, tgsd: [0.8, 1.7],
+    overflow: null, vents: [{ x: 0.03, y: 0.0, r: 0.15 }], w0: 0.03, T0: 1423, tgsd: [0.8, 1.7],
     wind: { to: 100, speed: 25 },
     phases: [
       { t0: 0, t1: 720, MER: 1e6, fountain: 400, ballistic: 0.7, pulse: true },

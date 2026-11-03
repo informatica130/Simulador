@@ -353,12 +353,13 @@ void main(){
     float n = flowTex(vXY, vVel, 120.0, 0.25 + spd * 0.05);
     float nb = flowTex(vXY * 1.7, vVel, 260.0, 0.4 + spd * 0.06);
     vec3 N = normalize(vN + vec3(n - 0.5, 0.0, nb - 0.5) * (0.12 + 0.05 * min(spd, 12.0)));
-    vec3 mud = mix(vec3(0.34, 0.26, 0.17), vec3(0.24, 0.21, 0.18), smoothstep(0.2, 0.55, cv));
+    // barro volcánico: café claro y turbio; más gris y espeso cuanto más sedimento lleva
+    vec3 mud = mix(vec3(0.55, 0.44, 0.30), vec3(0.47, 0.42, 0.36), smoothstep(0.2, 0.55, cv));
     float clean = 1.0 - smoothstep(0.004, 0.06, cv);
     mud = mix(mud, vec3(0.05, 0.11, 0.105), clean);
     mud *= 0.85 + 0.3 * n;
     float foam = smoothstep(0.55, 0.85, nb + n * 0.4) * smoothstep(1.5 + 2.0 * (1.0 - clean), 6.0 + 4.0 * (1.0 - clean), spd) * (1.0 - smoothstep(0.35, 0.55, cv));
-    mud = mix(mud, vec3(0.62, 0.56, 0.48), foam * 0.7);
+    mud = mix(mud, vec3(0.80, 0.74, 0.64), foam * 0.75);
     vec3 H = normalize(uSunDir + V);
     float fres = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
     col = mud * (uSunCol * max(dot(N, uSunDir), 0.0) + uSkyCol * (0.5 + 0.5 * N.y));

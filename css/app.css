@@ -170,3 +170,5 @@ body.picking canvas#gl{cursor:crosshair}
 .compute .cbar{height:5px;background:rgba(255,255,255,.1);border-radius:3px;margin:7px 0 5px;overflow:hidden}.compute .cbar i{display:block;height:100%;width:0;background:var(--acc)}
 .compute small{color:var(--tx3)}
 .toasts{top:150px}
+
+.nav>button.on{background:var(--acc);color:#1a0700;border-color:var(--acc)}

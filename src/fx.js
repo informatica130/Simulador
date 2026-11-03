@@ -40,21 +40,28 @@ void main(){
   vec2 q = vUv * 2.6 + vSeed * 31.0;
   vec2 w = vec2(fbm3(q + t), fbm3(q - t + 5.2));
   float n = fbm3(q * 1.5 + w * 1.7 + t * 0.4);
-  float base = 1.0 - smoothstep(0.3, 1.0, r);
-  // erosión con la edad: los bordes se deshacen en jirones
-  float er = mix(0.05, 0.5, vAge * vAge);
-  float dens = smoothstep(er, er + 0.35, base * (0.5 + 0.95 * n) - 0.12);
+  // voluta tipo coliflor: racimo de lóbulos, cada uno con su propia normal (luz y sombra)
+  float best = 1.0 - r / 0.62; vec2 cb = vec2(0.0); float rb = 0.62;
+  for (int k = 0; k < 5; k++) {
+    float a = vSeed * 40.0 + float(k) * 1.2566 + uTime * 0.01;
+    float rad = 0.36 + 0.14 * fract(vSeed * 7.0 + float(k) * 0.37);
+    vec2 c = vec2(cos(a), sin(a)) * (0.62 - rad) * 1.25;
+    float v = 1.0 - length(p - c) / rad;
+    if (v > best) { best = v; cb = c; rb = rad; }
+  }
+  float base = smoothstep(0.0, 0.3, best + (n - 0.5) * 0.35);
+  float er = mix(0.05, 0.45, vAge * vAge);
+  float dens = smoothstep(er, er + 0.22, base * (0.55 + 0.9 * n) - 0.08);
   if (dens < 0.01) discard;
-  // iluminación volumétrica aproximada: normal de esfera perturbada, autosombra y
-  // dispersión de Mie hacia adelante (Henyey-Greenstein): bordes plateados a contraluz
-  vec3 nrm = normalize(vec3(p * 0.9 + (w - 0.5) * 0.7, sqrt(max(0.0, 1.0 - r * r)) + 0.25));
-  float lam = 0.42 + 0.58 * max(dot(nrm, uSunV), 0.0);
+  vec2 lp = (p - cb) / rb;
+  vec3 nrm = normalize(vec3(lp * 0.9 + (w - 0.5) * 0.8, sqrt(max(0.0, 1.0 - dot(lp, lp))) + 0.15));
+  float lam = 0.38 + 0.62 * max(dot(nrm, uSunV), 0.0);
   float mu = dot(normalize(vView), uSunV);
   float g = 0.62, hg = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5) * 0.075;
   float thick = dens * vCol.a;
-  vec3 sunL = uSunCol * (lam * 0.40 + hg * (1.15 - thick) * 1.4) * vShade;
-  vec3 c = vCol.rgb * (sunL + uSkyCol * (0.80 + 0.2 * nrm.y) + 0.012);
-  c += vec3(1.0, 0.35, 0.08) * vGlow * (1.0 - 0.5 * r);
+  vec3 sunL = uSunCol * (pow(lam, 1.4) * 0.62 + hg * (1.15 - thick) * 1.4) * vShade;
+  vec3 c = vCol.rgb * (sunL + uSkyCol * (0.55 + 0.3 * nrm.y) * vec3(0.9, 0.95, 1.08) + 0.01);
+  c += vec3(1.0, 0.38, 0.09) * vGlow * (0.6 + 0.4 * (1.0 - nrm.y)) * 1.4;
   float d = length(vWp - uCamPos);
   c = mix(c, uFogCol, clamp(1.0 - exp(-d * uFogD), 0.0, 1.0));
   gl_FragColor = vec4(c, dens * vCol.a);
@@ -136,19 +143,20 @@ export class FX {
     const vx0 = v0.x * 1000, vy0 = v0.y * 1000, vz0 = this.hAt(v0.x, v0.y) + 40;
     const P = ctx.plume;
     const rnd = Math.random;
-    const emit = (key, rate) => { this.acc[key] = (this.acc[key] || 0) + rate * dtv; const n = Math.floor(this.acc[key]); this.acc[key] -= n; return Math.min(n, 400); };
+    const dens = this.density ?? 1;
+    const emit = (key, rate) => { this.acc[key] = (this.acc[key] || 0) + rate * dtv * dens; const n = Math.floor(this.acc[key]); this.acc[key] -= n; return Math.min(n, 400); };
     // ---------------- columna eruptiva
     if (s.MER > 50 && P) {
       const lg = Math.log10(s.MER);
-      let n = emit('plume', 8 + 9 * (lg - 2));
+      let n = emit('plume', 30 + 26 * (lg - 2));
       const steamy = ctx.phreatic ? 1 : 0;
       for (let k = 0; k < n; k++) {
         const v = vents[(rnd() * vents.length) | 0] || v0;
         const r = P.b0 * Math.sqrt(rnd()), a = rnd() * 6.283;
         const up = P.U0 * (0.6 + 0.4 * rnd());
-        const dark = 0.16 + 0.08 * rnd();
-        const c = steamy ? [0.78, 0.78, 0.8] : [dark * 1.08, dark, dark * 0.94];
-        this.smoke.add(v.x * 1000 + Math.cos(a) * r, v.y * 1000 + Math.sin(a) * r, this.hAt(v.x, v.y) + 30, 0, 0, up, 300 + 500 * rnd(), Math.max(60, P.b0 * 2.5), 600, SMOKE, c[0], c[1], c[2], 0.85, s.MER > 2e4 ? 0.12 : 0.04);
+        const tone = 0.9 + 0.2 * rnd();
+        const c = steamy ? [0.80, 0.80, 0.82] : [0.26 * tone, 0.225 * tone, 0.19 * tone];
+        this.smoke.add(v.x * 1000 + Math.cos(a) * r, v.y * 1000 + Math.sin(a) * r, this.hAt(v.x, v.y) + 30, (rnd() - 0.5) * 30, (rnd() - 0.5) * 30, up, 320 + 520 * rnd(), Math.max(90, P.b0 * 2.6), 520, SMOKE, c[0], c[1], c[2], 0.92, 0);
       }
       // lluvia de ceniza bajo la nube paraguas
       n = emit('ashf', Math.max(0, 4 * (lg - 4)));
@@ -157,18 +165,24 @@ export class FX {
         const lat = (rnd() - 0.5) * (2500 + d * 0.25);
         const x = vx0 + wx * d + wy * lat, y = vy0 + wy * d - wx * lat;
         const z = P.Ht * (0.55 + 0.3 * rnd());
-        this.smoke.add(x, y, z, wx * vref * 0.5, wy * vref * 0.5, -(6 + 10 * rnd()), 900, 220, 650, ASHF, 0.30, 0.28, 0.27, 0.08);
+        this.smoke.add(x, y, z, wx * vref * 0.5, wy * vref * 0.5, -(6 + 10 * rnd()), 900, 90, 160, ASHF, 0.30, 0.28, 0.27, 0.05);
       }
     }
+    // resplandor que ilumina la base de la columna desde abajo (de noche se ve naranja)
+    this.ventGlow = Math.min(1.6, (s.fountain > 0 ? s.fountain / 350 : 0) + (s.MER > 1e4 ? Math.log10(s.MER / 1e4) * 0.18 : 0) + this.boom * 0.5);
+    this.zVent = vz0; this.vx0 = vx0; this.vy0 = vy0;
     // ---------------- fuente de lava
     if (s.fountain > 20) {
       const vF = Math.sqrt(2 * 9.81 * s.fountain);
-      const n = emit('fount', 60 + s.fountain * 0.25);
+      const n = emit('fount', 120 + s.fountain * 0.5);
+      // halo incandescente sobre la boca
+      const nh = emit('halo', 3);
+      for (let k = 0; k < nh; k++) this.glow.add(vx0 + (rnd() - 0.5) * 80, vy0 + (rnd() - 0.5) * 80, vz0 + s.fountain * (0.2 + 0.4 * rnd()), 0, 0, 2, 2.5, s.fountain * (0.7 + 0.5 * rnd()), s.fountain * 1.1, FLAME, 1, 0.42, 0.12, 1, 0.22);
       for (let k = 0; k < n; k++) {
         const v = vents[(rnd() * vents.length) | 0] || v0;
         const th = (1 - Math.pow(rnd(), 2)) * 0.25, a = rnd() * 6.283, sp = vF * (0.55 + 0.5 * rnd());
         this.glow.add(v.x * 1000 + (rnd() - 0.5) * 60, v.y * 1000 + (rnd() - 0.5) * 60, this.hAt(v.x, v.y) + 15,
-          Math.sin(th) * Math.cos(a) * sp, Math.sin(th) * Math.sin(a) * sp, Math.cos(th) * sp, 30, 18 + 25 * rnd(), 8, SPARK, 1, 0.45 + 0.2 * rnd(), 0.12, 1, 1.6, 0.004);
+          Math.sin(th) * Math.cos(a) * sp, Math.sin(th) * Math.sin(a) * sp, Math.cos(th) * sp, 30, 26 + 34 * rnd(), 10, SPARK, 1, 0.5 + 0.25 * rnd(), 0.14, 1, 2.2, 0.004);
       }
     }
     // ---------------- explosiones estrombolianas y balística
@@ -206,7 +220,7 @@ export class FX {
     this.fumDh = 2.6 * Math.cbrt(F / (uLow * sStab));        // ascenso final en atmósfera estable
     // visibilidad del vapor condensado: crece con la humedad y el frío
     this.fumL = (110 + 1500 * Math.pow(fm.rh, 4)) * (1 + Math.max(0, 275 - fm.Ta) / 25);
-    const rate = (2 + 2.6 * Math.sqrt(Qw / 1e7));
+    const rate = (2 + 2.6 * Math.sqrt(Qw / 1e7)) * ((s.MER > 50 || s.E > 0.5) ? 0.12 : 1);
     for (let q = 0; q < this.fumaroles.length; q++) {
       const [fx, fy, wgt] = this.fumaroles[q];
       const n = emit('fum' + q, rate * wgt * 6);
@@ -275,7 +289,7 @@ export class FX {
       const W = windAt(z, vref);
       if (t === SMOKE && P) {
         const pl = plumeLookup(P, z);
-        if (pl && z < P.Ht - 150 && S.age[i] < 400) {
+        if (pl && z < P.Hnb && S.age[i] < 500) {
           // velocidad local de la pluma
           const cx = vx0 + wx * pl.x, cy = vy0 + wy * pl.x;
           const sth = Math.sin(pl.th), cth = Math.cos(pl.th);
@@ -283,12 +297,14 @@ export class FX {
           let tvx = wx * th, tvy = wy * th;
           const dx = x - cx, dy = y - cy, rr = Math.hypot(dx, dy) + 1;
           const pull = rr > pl.b ? -0.25 * (rr - pl.b) : 0.06 * pl.U;
-          tvx += dx / rr * pull + (Math.random() - 0.5) * pl.U * 0.25; tvy += dy / rr * pull + (Math.random() - 0.5) * pl.U * 0.25;
+          tvx += dx / rr * pull + (Math.random() - 0.5) * pl.U * 0.6; tvy += dy / rr * pull + (Math.random() - 0.5) * pl.U * 0.6;
           const k = Math.min(1, dt * 1.6);
           vx += (tvx - vx) * k; vy += (tvy - vy) * k; vz += (tvz - vz) * k;
-          S.s1[i] = Math.max(S.s1[i], pl.b * 1.4);
+          S.s1[i] = Math.min(Math.max(S.s1[i], pl.b * 1.25 + 120), 1150);
           // autosombra: el lado de la columna que mira al sol queda más iluminado
-          const sw = this.sunW; S.shade[i] = 0.55 + 0.45 * Math.max(-1, Math.min(1, (dx * sw[0] + dy * sw[1]) / rr * 1.4 + sw[2] * 0.3));
+          const sw = this.sunW; S.shade[i] = 0.45 + 0.55 * Math.max(-1, Math.min(1, (dx * sw[0] + dy * sw[1]) / rr * 1.4 + sw[2] * 0.3));
+          const hf = Math.max(0, Math.min(1, (z - this.zVent) / Math.max(1500, P.Ht - this.zVent)));
+          const ci = i * 4; S.col[ci] = 0.24 + 0.30 * hf; S.col[ci + 1] = 0.21 + 0.28 * hf; S.col[ci + 2] = 0.18 + 0.26 * hf;
         } else {
           // nube paraguas: corriente de gravedad radial + viento
           const cx = vx0 + wx * P.xTop, cy = vy0 + wy * P.xTop;
@@ -297,7 +313,7 @@ export class FX {
           const k = Math.min(1, dt * 0.5);
           vx += (wx * W + dx / rr * ur - vx) * k; vy += (wy * W + dy / rr * ur - vy) * k;
           vz += ((P.Hnb + (P.Ht - P.Hnb) * 0.5 - z) * 0.01 - vz) * k;
-          S.s1[i] = Math.max(S.s1[i], 1800 + S.age[i] * 6);
+          S.s1[i] = Math.min(Math.max(S.s1[i], 900 + S.age[i] * 1.5), 1600);
         }
       } else if (t === FUM) {
         // ascenso de Briggs: z − z0 = 1,6·F^(1/3)·x^(2/3)/u con x = u·t, hasta el ascenso final
@@ -389,10 +405,11 @@ export class FX {
           // partículas suaves: se desvanecen al tocar el relieve
           const gz = this.hAt(pool.p[i * 3] / 1000, pool.p[i * 3 + 1] / 1000), half = size * 500;
           a *= Math.max(0, Math.min(1, (pool.p[i * 3 + 2] - gz + half * 0.2) / half));
+          const cd = Math.hypot(P[q * 3] - cam.x, P[q * 3 + 1] - cam.y, P[q * 3 + 2] - cam.z); a *= Math.min(1, cd / Math.max(0.05, size * 1.5));
         }
         C[q * 4] = pool.col[i * 4]; C[q * 4 + 1] = pool.col[i * 4 + 1]; C[q * 4 + 2] = pool.col[i * 4 + 2]; C[q * 4 + 3] = a;
         SR[q * 2] = size; SR[q * 2 + 1] = pool.seed[i];
-        G[q] = sort ? pool.glow[i] * Math.max(0, 1 - pool.age[i] / 25) : pool.glow[i] * (1 - f * 0.5);
+        G[q] = sort ? (t === SMOKE ? (this.ventGlow || 0) * Math.exp(-Math.max(0, pool.p[i * 3 + 2] - (this.zVent || 0)) / 900) : pool.glow[i] * Math.max(0, 1 - pool.age[i] / 25)) : pool.glow[i] * (1 - f * 0.5);
         pool.aMisc.array[q * 2] = f; pool.aMisc.array[q * 2 + 1] = pool.shade[i];
       }
       pool.g.instanceCount = n;

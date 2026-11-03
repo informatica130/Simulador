@@ -30,7 +30,7 @@ const mobile = matchMedia('(max-width: 900px)').matches;
 // ------------------------------------------------------------------ estado
 const S = {
   scen: params.get('esc') && SCENARIOS[params.get('esc')] ? params.get('esc') : 'e2008',
-  mult: 0, emult: 0, T0: 1420, fumQ: 1.6, rh: 0, month: 0, hour: 18, wto: 100, wsp: 22, rain: 0, rainS: 2, melt: 1, erode: true,
+  mult: 0, emult: 0, T0: 1420, fumQ: 1.6, rh: 0, overflow: 'hist', measure: false, month: 0, hour: 18, wto: 100, wsp: 22, rain: 0, rainS: 2, melt: 1, erode: true,
   ventMode: 'scen', customVents: null, fisA: null,
   playing: false, speed: 60, quality: +(params.get('q') || 2), lite: params.get('lite') === '1' || mobile, overlay: 0, base: 0, ex: 1.5, probCh: 0,
   show: { daylight: false, roads: true, rivers: false, blds: true, labels: true, fx: true, arrows: true, trees: !(params.get('lite') === '1' || mobile), shadows: true, contours: false, snow: true, sound: false },
@@ -55,6 +55,11 @@ async function boot() {
   setLoad('Iniciando WebGL2 y el motor físico en GPU…', 0.65);
   renderer = new THREE.WebGLRenderer({ canvas: $('gl'), antialias: false, powerPreference: 'high-performance', alpha: false });
   if (!renderer.capabilities.isWebGL2) return fail('Este navegador no soporta WebGL2. Usa Chrome, Edge, Firefox o Safari recientes.');
+  // GPU integrada o de software → modo liviano por defecto (se puede cambiar en Calidad)
+  { const g0 = renderer.getContext(), dbg = g0.getExtension('WEBGL_debug_renderer_info');
+    const gpu = dbg ? String(g0.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) : '';
+    S.gpu = gpu;
+    if (!params.has('lite') && !params.has('q') && /intel|uhd|iris|hd graphics|mali|adreno|powervr|swiftshader|llvmpipe|microsoft basic/i.test(gpu)) { S.lite = true; S.autoLite = true; S.show.trees = false; } }
   const gl = renderer.getContext();
   if (!gl.getExtension('EXT_color_buffer_float')) return fail('La GPU no permite render a texturas float (EXT_color_buffer_float), necesario para el motor físico.');
   S.prMax = Math.min(devicePixelRatio || 1, S.lite ? 1 : 1.5); S.pr = Math.min(S.prMax, 1.25);
@@ -77,7 +82,7 @@ async function boot() {
   setLoad('Compilando el motor de simulación…', 0.8);
   // recorte Sentinel-2 2024 de ~8 m sobre el volcán, Melipeuco y Conguillío (sólo equipos de escritorio)
   let satHi = null;
-  if (!mobile && renderer.capabilities.maxTextureSize >= 4096 && params.get('hi') !== '0') {
+  if (!mobile && !S.lite && renderer.capabilities.maxTextureSize >= 4096 && params.get('hi') !== '0') {
     setLoad('Cargando imagen de alta resolución del volcán…', 0.74);
     satHi = await new THREE.TextureLoader().loadAsync('data/sathi.jpg').catch(() => null);
     if (satHi) { satHi.colorSpace = THREE.SRGBColorSpace; satHi.anisotropy = satTex.anisotropy; satHi.minFilter = THREE.LinearMipmapLinearFilter; }
@@ -89,13 +94,14 @@ async function boot() {
   scene.add(terr.mesh); scene.add(terr.fluid);
   ovl = createOverlays(D, sol, hAt, terr.shared); scene.add(ovl.group);
   fx = new FX(scene, hAt);
-  forest = new Forest(scene, D, sol, hAt, terr.shared, S.lite ? 8000 : 28000);
+  forest = new Forest(scene, D, sol, hAt, terr.shared, S.lite ? 6000 : 28000);
+  fx.density = S.lite ? 0.45 : 1;
   labels = new Labels($('labels'), camera, hAt, () => S.ex);
   // post-proceso
   const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: S.lite ? 0 : 2 });
   composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(scene, camera));
-  bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), 0.6, 0.5, 2.4); composer.addPass(bloom);
+  bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), 0.6, 0.5, 2.4); composer.addPass(bloom); bloom.enabled = !S.lite;
   composer.addPass(new OutputPass());
   setupPoints(); buildLabels(); buildUI(); setupInput();
   setLoad('Preparando la escena…', 0.92);
@@ -172,7 +178,7 @@ function applyScenario(key, fromPreset) {
   const vents = currentVents(sc);
   const ref = (vents && vents[0]) || (sc.vents && sc.vents[0]) || sc.fissure || { x: 0, y: 0 };
   const ventZ = hAt(ref.x, ref.y);
-  src = new EruptionSource(sc, { mult: Math.pow(10, S.mult), emult: Math.pow(10, S.emult), wind: { to: S.wto, speed: S.wsp }, vents, T0: S.T0, ventZ });
+  src = new EruptionSource(sc, { overflow: S.overflow === 'hist' ? undefined : S.overflow === 'auto' ? [] : [+S.overflow], mult: Math.pow(10, S.mult), emult: Math.pow(10, S.emult), wind: { to: S.wto, speed: S.wsp }, vents, T0: S.T0, ventZ });
   const hadSnap = sol.baseMonth;
   run.start(src, { month: S.month, rain: S.rain, rainStart: S.rainS, melt: S.melt, erode: S.erode ? 1 : 0, onSpin: () => setLoad && $('loadtxt') && setLoad('Equilibrando el caudal de los ríos para ' + MONTHS[S.month] + '…', 0.9) });
   if (hadSnap !== sol.baseMonth) resnapGauges();
@@ -327,6 +333,7 @@ function buildUI() {
   };
   for (const k of ['mult', 'emult', 'T0', 'hour', 'wto', 'wsp', 'rain', 'rainS', 'melt', 'fumQ', 'rh']) bind(k, k, F[k]);
   $('month').addEventListener('change', () => S.month = +$('month').value);
+  $('overflow').addEventListener('change', () => { S.overflow = $('overflow').value; applyScenario(S.scen, false); S.playing = true; $('play').textContent = '❚❚'; });
   $('erode').addEventListener('change', () => S.erode = $('erode').checked);
   $('apply').onclick = () => { applyScenario(S.scen, false); S.playing = true; $('play').textContent = '❚❚'; };
   $('ex').addEventListener('input', () => { S.ex = +$('ex').value; $('o_ex').textContent = F.ex(S.ex); setEx(); });
@@ -362,6 +369,8 @@ function buildUI() {
   for (const [k, t] of [['lahar', '▶ Seguir el lahar'], ['lava', '▶ Seguir la lava'], ['pdc', '▶ Seguir la CDP']]) { const b = document.createElement('button'); b.textContent = t; b.className = 'follow';
     b.onclick = () => { S.follow = k; const f = vsum && vsum.spots && vsum.spots.fronts && vsum.spots.fronts[k][0]; if (f) flyTo(f.x, f.y, 3.2, 0.95); else toast('Todavía no hay ' + (k === 'lahar' ? 'lahar' : k === 'lava' ? 'lava' : 'corriente piroclástica') + ' en movimiento'); }; $('views').appendChild(b); }
   $('home').onclick = () => goView('general');
+  $('measure').onclick = () => { S.measure = !S.measure; $('measure').classList.toggle('on', S.measure); document.body.classList.toggle('picking', S.measure);
+    if (!S.measure) { $('probe').hidden = true; S.probe = null; } else toast('Haz clic en el mapa para ver qué pasa en ese punto'); };
   $('zin').onclick = () => dolly(0.6); $('zout').onclick = () => dolly(1.6);
   $('tilt').onclick = () => { const sph = new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target)); sph.phi = sph.phi > 0.3 ? 0.02 : 0.95; $('tilt').textContent = sph.phi < 0.3 ? '2D' : '3D'; animateCam(controls.target.clone(), controls.target.clone().add(new THREE.Vector3().setFromSpherical(sph))); };
   $('compass').onclick = () => { const off = camera.position.clone().sub(controls.target); const sph = new THREE.Spherical().setFromVector3(off); sph.theta = 0; animateCam(controls.target.clone(), controls.target.clone().add(new THREE.Vector3().setFromSpherical(sph))); };
@@ -577,6 +586,7 @@ function setupInput() {
       S.customVents = fissureVents((a.x + p.x) / 2, (a.y + p.y) / 2, az, Math.max(0.2, len), Math.min(8, Math.max(2, Math.round(len / 0.3))));
       S.fisA = null; applyScenario(S.scen, false); toast(`Fisura de ${(len * 1000).toFixed(0)} m, rumbo ${az.toFixed(0)}°`); return;
     }
+    if (!S.measure) return;
     S.probe = { x: p.x, y: p.y, sx: e.clientX, sy: e.clientY }; showProbe(p.x, p.y);
   });
   cv.addEventListener('dblclick', e => { const p = pickTerrain(e.clientX, e.clientY); if (p) flyTo(p.x, p.y, Math.max(0.6, camera.position.distanceTo(controls.target) * 0.45), 0.85); });
@@ -725,8 +735,11 @@ function fxWarm(sec) {
   for (let t = 0; t < sec; t += 0.5) fx.update(0.5, { src: st, plume: P, vents: src.vents, wind: src.wind, phreatic: S.scen === 'freatica', fumarole: st.active ? 2.5 : 1, fum });
 }
 let drT = 0;
+let slowN = 0;
 function dynRes(now) {
   if (now - drT < 1500) return; drT = now;
+  if (fpsS < 18 && !S.lite) { if (++slowN >= 3) { S.lite = true; S.show.trees = false; forest.visible = false; bloom.enabled = false; fx.density = 0.45; S.prMax = 0.85;
+    toast('Tu equipo va lento: activé el modo liviano (sin bosque 3D ni resplandor). Puedes cambiar la calidad en el panel derecho.'); } } else slowN = 0;
   let pr = S.pr;
   if (fpsS < 26 && pr > 0.6) pr = Math.max(0.6, pr - 0.15);
   else if (fpsS > 50 && pr < S.prMax) pr = Math.min(S.prMax, pr + 0.1);
@@ -739,9 +752,9 @@ function frame(now) {
   const dtr = Math.min(0.1, (now - last) / 1000); last = now; fpsS = fpsS * 0.95 + (1 / Math.max(dtr, 1e-3)) * 0.05;
   // 1) cálculo de la erupción a máxima velocidad, con presupuesto de tiempo por cuadro
   if (S.computing) {
-    const t0 = performance.now(), budget = S.capSteps ? 1 : 40;
+    const t0 = performance.now(), budget = S.capSteps ? 1 : (S.lite ? 18 : 28);
     while (performance.now() - t0 < budget && run.t < S.tEnd) {
-      run.advance(S.capSteps || 160, S.tEnd);
+      run.advance(S.capSteps || 240, S.tEnd);
       run.readSummary(false);
       if (run.t - S.lastRec >= 60 || run.t >= S.tEnd) { S.lastRec = run.t; computeRecord(); }
     }
