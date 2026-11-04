@@ -173,7 +173,7 @@
   const chap = (t, num, title, col, t1 = 4.4) => chapter(t, 0.25, t1, num, title, null, { y: 1500, size: 130, color: col });
 
   // =================================================================== 1 · ESTROMBOLIANA (como 2008, de noche)
-  const N1 = { look: night, glowK: 0.55, bloomK: 0.8 };
+  const N1 = { look: night, glowK: 0.4, bloomK: 0.5, glowSize: 0.4, haloK: 0.15, ventK: 0.45 };
   DIR.shot('e1_a', {
     dur: 4.5, ...N1, warm: 4,
     mk() { return drone([
@@ -201,8 +201,8 @@
   DIR.shot('e1_lava', {
     dur: 6.8, ...N1, warm: 3,
     mk() { return drone([
-      { t: 0, x: -1.6, y: -1.4, z: 6200, lx: -0.7, ly: 0.05, la: 0, fov: 42 },
-      { t: 6.8, x: -1.3, y: -1.1, z: 4900, lx: -0.6, ly: 0.05, la: 0, fov: 42 },
+      { t: 0, x: -2.6, y: -2.6, z: 6400, lx: -0.7, ly: 0.05, la: 0, fov: 42 },
+      { t: 6.8, x: -2.1, y: -2.0, z: 5300, lx: -0.6, ly: 0.05, la: 0, fov: 42 },
     ], { ease: ease.sine, shake: 5 }); },
     sim: t => 2400 + t * 900, rate: () => 900,
     draw(t) {
@@ -213,10 +213,10 @@
     },
   });
   DIR.shot('e1_meli', {
-    dur: 6.3, look: { ...night, exp: 1.45 }, glowK: 0.55, bloomK: 0.8, warm: 3, roads: true,
+    dur: 6.3, look: { ...night, exp: 1.45 }, glowK: 0.5, bloomK: 0.55, glowSize: 0.7, haloK: 0.3, ventK: 0.6, warm: 3, roads: true,
     mk() { return drone([
-      { t: 0, x: 3.45, y: -19.6, a: 220, lx: 1.2, ly: -6, la: 1200, fov: 42 },
-      { t: 6.3, x: 3.3, y: -18.8, a: 480, lx: 1.0, ly: -5, la: 1300, fov: 42 },
+      { t: 0, x: 3.45, y: -19.6, a: 220, lx: 1.4, ly: -7, la: 500, fov: 44 },
+      { t: 6.3, x: 3.3, y: -18.8, a: 480, lx: 1.2, ly: -6, la: 500, fov: 44 },
     ], { ease: ease.sine, shake: 6 }); },
     sim: t => 8000 + t * 600, rate: () => 600,
     draw(t) {
@@ -268,7 +268,7 @@
   // =================================================================== 3 · SUBPLINIANA (tipo 1640)
   const plumeH = st => { const s = APP.src().at(st); return s && s.MER > 50 ? APP.src().plume(s.MER).Ht : 0; };
   DIR.shot('e3_a', {
-    dur: 5.5, look: { ...day, fogD: 1.1 }, warm: 4,
+    dur: 5.5, look: { ...day, fogD: 1.1 }, warm: 4, glowSize: 0.55, haloK: 0.4,
     mk() { return drone([
       { t: 0, x: 1.9, y: -7.0, a: 140, lx: 0.03, ly: 0, la: 1200, fov: 44 },
       { t: 5.5, x: 1.3, y: -5.0, a: 900, lx: 0.2, ly: 0, la: 5200, fov: 44 },
@@ -282,7 +282,7 @@
     },
   });
   DIR.shot('e3_b', {
-    dur: 6.0, look: { ...day, fogD: 1.0 }, warm: 4,
+    dur: 6.0, look: { ...day, fogD: 1.0 }, warm: 4, glowSize: 0.7,
     mk() { return orbit(1.5, 0, 15, 196, 226, 4200, 6.0, { lx: 2.5, ly: 0, la: 4500 }, { ease: ease.lin, fov: 40, shake: 5 }); },
     sim: t => 3700 + t * 400, rate: () => 400,
     draw(t) {
@@ -311,7 +311,7 @@
 
   // =================================================================== 4 · PLINIANA (peor caso)
   DIR.shot('e4_a', {
-    dur: 4.6, look: { ...day, fogD: 1.1 }, warm: 4,
+    dur: 4.6, look: { ...day, fogD: 1.1 }, warm: 4, glowSize: 0.55, haloK: 0.4,
     mk() { return drone([
       { t: 0, x: 2.2, y: -6.8, a: 520, lx: 0.03, ly: 0, la: 1500, fov: 46 },
       { t: 4.6, x: 1.3, y: -4.2, a: 700, lx: 0.03, ly: 0, la: 2300, fov: 46 },
@@ -325,7 +325,7 @@
     },
   });
   DIR.shot('e4_b', {
-    dur: 4.8, look: { ...day, fogD: 1.1 }, warm: 4,
+    dur: 4.8, look: { ...day, fogD: 1.1 }, warm: 4, glowSize: 0.55, haloK: 0.4,
     mk() { return drone([
       { t: 0, x: 3.9, y: -6.3, z: 3100, lx: 0.1, ly: -0.1, lz: 4600, fov: 46 },
       { t: 4.8, x: 4.6, y: -7.4, z: 5000, lx: 0.3, ly: -0.1, lz: 8200, fov: 46 },
@@ -339,7 +339,7 @@
     },
   });
   DIR.shot('e4_pdc', {
-    dur: 6.5, look: { ...day, fogD: 1.2 }, warm: 4,
+    dur: 6.5, look: { ...day, fogD: 1.2 }, warm: 4, glowSize: 0.55, haloK: 0.4,
     mk() { return orbit(0.5, -0.8, 8.5, 158, 192, 3300, 6.5, { lx: 0.6, ly: -1.4, la: 500 }, { ease: ease.lin, fov: 42, shake: 7 }); },
     sim: t => 1500 + t * 220, rate: () => 220,
     draw(t) {

@@ -403,7 +403,7 @@ export class FX {
         const i = order ? order[q] : q, o = i * 3;
         P[q * 3] = pool.p[o] / 1000; P[q * 3 + 1] = pool.p[o + 2] / 1000 * ex; P[q * 3 + 2] = -pool.p[o + 1] / 1000;
         const f = pool.age[i] / pool.life[i];
-        const size = (pool.s0[i] + (pool.s1[i] - pool.s0[i]) * Math.sqrt(f)) / 1000;
+        const size = (pool.s0[i] + (pool.s1[i] - pool.s0[i]) * Math.sqrt(f)) / 1000 * (sort ? 1 : (this.glowSize ?? 1));
         const t = pool.type[i];
         let a = pool.col[i * 4 + 3];
         if (sort) {
@@ -416,7 +416,7 @@ export class FX {
         }
         C[q * 4] = pool.col[i * 4]; C[q * 4 + 1] = pool.col[i * 4 + 1]; C[q * 4 + 2] = pool.col[i * 4 + 2]; C[q * 4 + 3] = a;
         SR[q * 2] = size; SR[q * 2 + 1] = pool.seed[i];
-        G[q] = sort ? (t === SMOKE ? (this.ventGlow || 0) * (0.1 + 0.9 * this.night) * Math.exp(-Math.max(0, pool.p[i * 3 + 2] - (this.zVent || 0)) / 900) : pool.glow[i] * Math.max(0, 1 - pool.age[i] / 25)) : pool.glow[i] * (1 - f * 0.5);
+        G[q] = sort ? (t === SMOKE ? (this.ventGlow || 0) * (this.ventK ?? 1) * (0.1 + 0.9 * this.night) * Math.exp(-Math.max(0, pool.p[i * 3 + 2] - (this.zVent || 0)) / 900) : pool.glow[i] * Math.max(0, 1 - pool.age[i] / 25)) : pool.glow[i] * (1 - f * 0.5) * (t === FLAME ? (this.haloK ?? 1) : 1);
         pool.aMisc.array[q * 2] = f; pool.aMisc.array[q * 2 + 1] = pool.shade[i];
         if (!sort) { const V = pool.aVel.array; V[q * 3] = pool.v[o] / 1000; V[q * 3 + 1] = pool.v[o + 2] / 1000 * ex; V[q * 3 + 2] = -pool.v[o + 1] / 1000; }
       }
