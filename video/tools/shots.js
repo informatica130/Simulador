@@ -342,10 +342,8 @@
     draw(t) {
       gradTop(0.4, 500); gradBot(0.8, 800); vignette(0.75);
       const st = lerp(tLah[0], tLah[1], t / 8), f = alongD(trLah, st);
-      kicker('LAHAR · FLUJO DE BARRO Y ROCAS', 72, 1160, t, 0.4, 8.2, C.acc2);
       if (f) { const dkm = Math.max(0.1, f.d), s1 = dkm < 1.05 ? 'a menos de 1 km' : `a ${dkm.toFixed(1).replace('.', ',')} km`;
-        reveal(s1, 66, 1290, t, 0.6, 8.2, { size: dkm < 1.05 ? 96 : 120, weight: 800, font: F.disp, track: -3, color: dkm < 2 ? '#ff6a4d' : C.tx });
-        reveal('de Melipeuco', 72, 1356, t, 0.8, 8.2, { size: 44, weight: 600, color: C.tx2 }); }
+        dataCard(t, 0.4, 8.6, 1170, 'LAHAR · FLUJO DE BARRO Y ROCAS', s1, 'de Melipeuco · baja por el río Truful-Truful', { vsize: dkm < 1.05 ? 92 : 110, color: dkm < 2 ? C.red : C.acc }); }
       place('Melipeuco', MELI[0], MELI[1], t, 0.3, 7.8, { size: 34, weight: 750 });
       hud(t, { clock: st, rec: true });
     },
