@@ -50,6 +50,7 @@ async function compute(page, cfg, log = console.log) {
   if (fs.existsSync(path.join(CK, key + '.bin'))) {
     const t = await page.evaluate(async key => { const b = await (await fetch(`http://localhost:${__CKPORT}/?f=${key}`)).arrayBuffer(); return CKPT.restore(b); }, key);
     log(`punto de control ${key} restaurado en T+${(t / 3600).toFixed(2)} h`);
+    if (process.env.NOCOMPUTE) { await page.evaluate(() => { APP.S.tEnd = APP.run.t; APP.S.computing = false; }); return; }
   }
   const saveCk = async () => { const t = await page.evaluate(async key => { const b = await CKPT.save(); await fetch(`http://localhost:${__CKPORT}/?f=${key}`, { method: 'POST', body: b }); return APP.run.t; }, key); log(`punto de control guardado T+${(t / 3600).toFixed(2)} h`); };
   const t0 = Date.now(); let lastLog = 0, lastCk = Date.now(), wrote = false;

@@ -59,12 +59,12 @@
       // distancia cráter–Melipeuco sobre el terreno
       const path = groundPath(MELI, CRATER, 60, 60);
       const f = ease.inOut((t - 2.6) / 2.2);
-      if (t > 2.6) line(partial(path, f), { color: C.acc2, w: 4, dash: [2, 12], alpha: win(t, 2.6, 8.8, 0.3, 0.4), glow: 6 });
-      pin(MELI[0], MELI[1], 'MELIPEUCO', '6.138 hab. · Censo 2017', t, 0.8, 8.8, { len: 120, size: 50, subSize: 28 });
+      if (t > 2.6) line(partial(path.slice(15), f), { color: C.acc2, w: 4, dash: [2, 12], alpha: win(t, 2.6, 8.8, 0.3, 0.4), glow: 6 });
+      pin(MELI[0], MELI[1], 'MELIPEUCO', '6.138 hab. · Censo 2017', t, 0.8, 8.8, { len: 130, size: 50, subSize: 28 });
       pin(CRATER[0], CRATER[1], 'LLAIMA', '3.125 m s.n.m.', t, 2.0, 8.8, { len: 70, size: 46, subSize: 28, color: C.acc, hgt: 0 });
       // rótulo de la distancia en la mitad de la línea
       if (t > 4.2) { const m = path[30]; const a = win(t, 4.4, 8.8, 0.5, 0.4); if (m.on) { txt('17,6 km', m.x + 24, m.y, { size: 64, weight: 800, font: F.disp, alpha: a, color: C.acc2 }); txt('EN LÍNEA RECTA', m.x + 28, m.y + 40, { size: 22, weight: 600, track: 4, alpha: a * 0.8 }); } }
-      kicker('A LOS PIES DEL VOLCÁN', 72, 1580, t, 0.6, 8.8, C.tx2);
+      kicker('A LOS PIES DEL VOLCÁN', 72, 1790, t, 0.6, 8.8, C.tx2);
       hud(t, {});
       fadeIn(t, 0.4);
     },
@@ -378,7 +378,7 @@
     ],
     camEase: ease.sine,
     sim: t => { const g = meliG(); return (g.arr > 0 ? g.arr : 5400) + 1200 + t * 60; }, rate: () => 60,
-    bgFilter: t => `brightness(${(1 - 0.45 * ss(0.5, 2.0, t)).toFixed(2)})`,
+    bgFilter: t => `blur(${(5 + 7 * ss(0.3, 2.0, t)).toFixed(1)}px) brightness(${(0.8 - 0.3 * ss(0.3, 2.0, t)).toFixed(2)}) saturate(0.9)`,
     draw(t) {
       vignette(0.9);
       const g = meliG(), arr = g.arr > 0 ? g.arr / 60 : null;
