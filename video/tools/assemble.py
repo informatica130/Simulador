@@ -54,9 +54,9 @@ def main():
     open(lst, 'w').write('\n'.join(f"file '{c}'" for c in clips))
     grade = ("curves=master='0/0.025 0.25/0.27 0.5/0.53 0.75/0.78 1/0.985',"
              "eq=contrast=1.05:saturation=1.10:gamma=1.04,"
-             "unsharp=5:5:0.35:5:5:0,noise=alls=3:allf=t,format=yuv420p")
+             "unsharp=5:5:0.35:5:5:0,format=yuv420p")
     subprocess.check_call(['ffmpeg', '-loglevel', 'error', '-stats', '-y', '-f', 'concat', '-safe', '0', '-i', lst, '-i', wav,
-                           '-vf', grade, '-map', '0:v', '-map', '1:a', '-c:v', 'libx264', '-preset', 'slow', '-crf', '15',
+                           '-vf', grade, '-map', '0:v', '-map', '1:a', '-c:v', 'libx264', '-preset', 'slow', '-crf', '16', '-maxrate', '28M', '-bufsize', '56M',
                            '-profile:v', 'high', '-level', '4.2', '-r', '24', '-g', '48', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709',
                            '-c:a', 'aac', '-b:a', '320k', '-ar', '48000', '-shortest', '-movflags', '+faststart', OUT])
     print('listo', OUT, f'{total:.1f} s')
