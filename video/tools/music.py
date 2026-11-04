@@ -88,7 +88,7 @@ def main(cfile, out):
             for d in (-0.004, 0.0, 0.0045):
                 seg += saw(tt, f, d) * 0.12
             seg += np.sin(2 * np.pi * f * 0.5 * tt) * 0.08
-        L = b - a; att = int(1.0 * SR); rel = int(1.4 * SR)
+        L = b - a; att = min(L, int(1.0 * SR)); rel = min(L, int(1.4 * SR))
         e = np.ones(L); e[:att] = np.linspace(0, 1, att) ** 2
         e[-rel:] *= np.linspace(1, 0, rel) ** 1.5
         pad[a:b] += seg * e
