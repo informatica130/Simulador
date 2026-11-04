@@ -4,7 +4,8 @@
 //  Se inyecta en la página del simulador junto con shim.js.
 // =====================================================================
 (() => {
-  const W = () => innerWidth, H = () => innerHeight;
+  // tamaño del cuadro de salida (puede diferir de la ventana del render)
+  const W = () => (ctx ? ctx.canvas.width : innerWidth), H = () => (ctx ? ctx.canvas.height : innerHeight);
   const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
   const lerp = (a, b, t) => a + (b - a) * t;
   const ss = (a, b, v) => { const t = clamp((v - a) / (b - a)); return t * t * (3 - 2 * t); };
@@ -45,7 +46,7 @@
     const f = clamp((u - b.t) / (c.t - b.t));
     const cr = (p0, p1, p2, p3, s) => 0.5 * ((2 * p1) + (-p0 + p2) * s + (2 * p0 - 5 * p1 + 4 * p2 - p3) * s * s + (-p0 + 3 * p1 - 3 * p2 + p3) * s * s * s);
     const o = {};
-    for (const key of ['x', 'y', 'dist', 'head', 'pitch', 'dz', 'fov']) {
+    for (const key of ['x', 'y', 'dist', 'head', 'pitch', 'dz', 'fov', ...(b.z != null ? ['z'] : [])]) {
       const g = q => q[key] != null ? q[key] : (key === 'dz' ? 0 : key === 'fov' ? 40 : b[key]);
       o[key] = key === 'dist' ? Math.exp(cr(Math.log(g(a)), Math.log(g(b)), Math.log(g(c)), Math.log(g(d)), f)) : cr(g(a), g(b), g(c), g(d), f);
     }

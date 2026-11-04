@@ -1,12 +1,16 @@
 // Exploración: calcula un escenario, extrae datos clave y guarda vistas previas
 const fs = require('fs');
 const { openSession, compute } = require('./session.js');
-const SC = JSON.parse(process.argv[2]);
+const { SCEN } = require('./sessions.js');
+const [scName, prevArg] = [process.argv[2], process.argv[3]];
+const SC = { ...SCEN[scName] }; const PREV = prevArg ? prevArg.split(',').map(Number) : [];
+SC.name = scName;
 const out = __dirname + '/../work/explore_' + SC.name; fs.mkdirSync(out, { recursive: true });
+if (fs.existsSync(out + '/data.json') && !process.env.FORCE) { console.log('ya existe', out); process.exit(0); }
 const log = (...a) => { const s = new Date().toISOString().slice(11, 19) + ' ' + a.join(' '); console.log(s); fs.appendFileSync(out + '/log.txt', s + '\n'); };
 (async () => {
   const { browser, page } = await openSession({ W: 540, H: 960, esc: SC.esc, log });
-  await compute(page, SC, log);
+  const { name: _n, ...cc } = SC; await compute(page, cc, log);
   const data = await page.evaluate(() => {
     const A = APP; A.S.playT = A.run.t; A.S.computing = false; A.player.update(A.run.t, A.run.t, A.src().tEnd + 3600); A.readback(true);
     const smp = A.smp, g0 = A.idx.g[0], s0 = A.idx.s[0];
@@ -22,10 +26,10 @@ const log = (...a) => { const s = new Date().toISOString().slice(11, 19) + ' ' +
   log('datos guardados');
   // vistas previas
   await page.evaluate(() => { APP.composer.renderTarget1.samples = 0; APP.composer.renderTarget2.samples = 0; __REC.useVirtual(); window.__oc = document.createElement('canvas'); __oc.width = innerWidth; __oc.height = innerHeight; window.__ox = __oc.getContext('2d'); });
-  for (const t of SC.previews || []) for (const v of ['general', 'meli', 'crater', 'truful']) {
+  for (const t of PREV) for (const v of ['general', 'meli', 'crater', 'truful']) {
     const url = await page.evaluate(({ t, v }) => { const A = APP; A.S.playT = t; A.goView(v, true); A.readback(true); A.fxWarm(20); for (let i = 0; i < 3; i++) __REC.tick(1 / 24); __ox.drawImage(document.getElementById('gl'), 0, 0); return __oc.toDataURL('image/jpeg', 0.85); }, { t, v });
     fs.writeFileSync(`${out}/p_${v}_${Math.round(t / 60)}m.jpg`, Buffer.from(url.split(',')[1], 'base64'));
   }
   log('fin');
-  await browser.close();
+  await browser.close(); process.exit(0);
 })().catch(e => { log('ERROR', e.stack); process.exit(1); });

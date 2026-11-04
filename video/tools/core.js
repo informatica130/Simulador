@@ -42,7 +42,21 @@
     gl = document.getElementById('gl');
     await DIR.ensure();
   };
-  DIR.afterCompute = () => { const A = APP; A.S.computing = false; A.S.playing = false; __REC.useVirtual(); };
+  DIR.afterCompute = () => {
+    const A = APP; A.S.computing = false; A.S.playing = false;
+    // mediciones del motor al final del período calculado (las usan los gráficos de las tomas)
+    const tEnd = A.run.t; A.player.update(tEnd, tEnd, A.src().tEnd + 3600); A.readback(true);
+    const smp = A.smp, g0 = A.idx.g[0], s0 = A.idx.s[0];
+    DIR.M = {
+      tEnd,
+      g: Object.fromEntries(A.gaugePts.map((g, i) => { const v = smp[g0 + i]; return [g.k, { name: g.name, x: g.x, y: g.y, maxH: v.stat[0], arr: v.stat[1] - 1, lava: v.stat[2], lavaArr: v.stat[3] - 1, pdc: v.fluidP[3], pdcArr: v.fluidP[2] - 1, ash: v.ash[0], ashT: v.ash[1] - 1 }]; })),
+      s: A.sites.map((g, i) => { const v = smp[s0 + i]; return { name: g.name, x: g.x, y: g.y, maxH: v.stat[0], arr: v.stat[1] - 1, lava: v.stat[2], pdc: v.fluidP[3], ash: v.ash[0], ashT: v.ash[1] - 1 }; }),
+      series: A.run.series.map(s => ({ t: s.t, H: s.H, MER: s.MER, lahar: s.lahar, lava: s.lava, pdc: s.pdc, melt: s.melt, ash: s.ash, ex: s.exposure })),
+      events: A.events.map(e => ({ t: e.t, msg: e.msg })),
+    };
+    __REC.useVirtual();
+    return { tEnd, g: DIR.M.g, s: DIR.M.s, events: DIR.M.events };
+  };
   DIR.setup = id => {
     const A = APP, sh = DIR.SHOTS[id]; cur = sh; curId = id;
     A.S.show.roads = !!sh.roads; A.S.show.labels = false; A.S.show.arrows = false; A.S.show.daylight = !!sh.daylight; A.S.show.trees = sh.trees !== false; A.applyShow();
@@ -80,5 +94,25 @@
     if (jpeg) return oc.toDataURL('image/jpeg', 0.9);
     const id = ox.getImageData(0, 0, cfg.OUTW, cfg.OUTH);
     return fetch(`http://localhost:${cfg.port}/f`, { method: 'POST', body: id.data.buffer }).then(() => 1);
+  };
+
+  // ---- seguimiento de frentes: posiciones del frente (lava/lahar/CDP) en tiempos de simulación, suavizadas
+  DIR.trackFront = (kind, t0, t1, n = 16, pick = null) => {
+    const A = APP, out = [];
+    for (let i = 0; i <= n; i++) {
+      const t = t0 + (t1 - t0) * i / n; A.player.update(t, A.run.t, A.src().tEnd + 3600);
+      const sp = A.run.readSummary(true, A.player).spots, fr = (sp && sp.fronts && sp.fronts[kind]) || [];
+      const f = pick ? pick(fr) : fr[0];
+      if (f) out.push({ t, x: f.x, y: f.y, d: f.d });
+    }
+    // fuerza alejamiento monótono de la boca y suaviza (media móvil)
+    for (let i = 1; i < out.length; i++) if (out[i].d < out[i - 1].d) { out[i].x = out[i - 1].x; out[i].y = out[i - 1].y; out[i].d = out[i - 1].d; }
+    const sm = out.map((p, i) => { let x = 0, y = 0, w = 0; for (let k = -2; k <= 2; k++) { const q = out[Math.max(0, Math.min(out.length - 1, i + k))]; x += q.x; y += q.y; w++; } return { t: p.t, x: x / w, y: y / w }; });
+    return sm;
+  };
+  DIR.along = (tr, t) => {
+    if (!tr || !tr.length) return null; if (t <= tr[0].t) return tr[0]; if (t >= tr[tr.length - 1].t) return tr[tr.length - 1];
+    let i = 0; while (tr[i + 1].t < t) i++; const a = tr[i], b = tr[i + 1], f = (t - a.t) / (b.t - a.t);
+    return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
   };
 })();

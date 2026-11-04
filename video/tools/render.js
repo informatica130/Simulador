@@ -7,7 +7,7 @@
 const fs = require('fs'), path = require('path'), http = require('http');
 const { spawn } = require('child_process');
 const { openSession, compute } = require('./session.js');
-const { SESSIONS, FPS } = require('./sessions.js');
+const { SESSIONS, FPS, SCEN } = require('./sessions.js');
 
 const name = process.argv[2];
 const only = (process.argv.find(a => a.startsWith('--only=')) || '').slice(7).split(',').filter(Boolean);
@@ -38,16 +38,17 @@ function encoder(file) {
   const todo = shots.filter(id => !fs.existsSync(path.join(ROOT, 'shots', id, 'done')) || preview);
   if (!todo.length) { log('nada pendiente'); srv.close(); return; }
   const W = S.W || OUTW, H = S.H || OUTH;
-  const { browser, page } = await openSession({ W, H, esc: S.esc, q: 2, m: S.m || 2, extra: S.extra || '', log });
+  const { browser, page } = await openSession({ W, H, esc: S.scen ? SCEN[S.scen].esc : S.esc, q: 2, m: S.m || 2, extra: S.extra || '', log });
   await page.addScriptTag({ path: path.join(__dirname, 'gfx.js') });
   await page.evaluate(async () => { window.VCAT = (await import('/src/config.js')).CATALOG; });
   const dfile = path.join(ROOT, 'vdata.json'); if (fs.existsSync(dfile)) await page.evaluate(d => { window.VDATA = d; }, JSON.parse(fs.readFileSync(dfile, 'utf8')));
   await page.addScriptTag({ path: path.join(__dirname, 'core.js') });
   await page.addScriptTag({ path: path.join(__dirname, 'shots.js') });
   await page.evaluate(async ({ port, OUTW, OUTH, FPS }) => { await DIR.init({ port, OUTW, OUTH, FPS }); }, { port: srv.address().port, OUTW, OUTH, FPS });
-  if (S.compute) await compute(page, { esc: S.esc, ...S.compute }, log);
+  if (S.scen) await compute(page, { ...SCEN[S.scen] }, log);
   else await page.evaluate(() => { APP.S.computing = false; });
-  await page.evaluate(() => DIR.afterCompute());
+  const meas = await page.evaluate(() => DIR.afterCompute());
+  fs.writeFileSync(path.join(ROOT, `measure_${name}.json`), JSON.stringify(meas, null, 1));
   for (const id of todo) {
     const dir = path.join(ROOT, 'shots', id); fs.mkdirSync(dir, { recursive: true });
     const n = await page.evaluate(id => DIR.setup(id), id);
