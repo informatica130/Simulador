@@ -228,7 +228,7 @@
       place('Melipeuco', MELI[0], MELI[1], t, 0.3, 5.8, { size: 34, weight: 700 });
       const g = meliG(), sA = meliS();
       const lah = g.arr > 0 && g.maxH - 0 > 0.3;
-      dataCard(t, 1.0, 5.8, 1130, 'EN MELIPEUCO', lah ? `Lahar ${g.maxH.toFixed(1).replace('.', ',')} m` : 'Sin lahar', lah ? `llega en ${fmtDur(g.arr)} al puente Allipén` : `ceniza: ${fmtMM(sA.ash || 0)} · riesgo bajo`, { color: lah ? C.red : C.ok });
+      dataCard(t, 1.0, 5.8, 1130, 'EN MELIPEUCO', lah ? `Lahar ${g.maxH.toFixed(1).replace('.', ',')} m` : 'Sin lahar', lah ? `llega en ${fmtDur(g.arr)} al puente Allipén` : (sA.ash || 0) >= 0.5 ? `ceniza: ${fmtMM(sA.ash)} · riesgo bajo` : 'los lahares se quedan en las laderas', { color: lah ? C.red : C.ok });
       hud(t, { clock: 8000 + t * 600 });
       fadeOut(t, 6, 0.3);
     },
