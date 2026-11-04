@@ -169,7 +169,7 @@
   const M = () => DIR.M || { g: {}, s: [] };
   const meliG = () => M().g.meli || {}, meliS = () => (M().s || [])[0] || {};
   const fmtDur = sec => { if (!(sec >= 0)) return '—'; const m = Math.round(sec / 60); return m < 90 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min`; };
-  const fmtMM = mm => mm >= 10 ? `${(mm / 10).toFixed(mm >= 100 ? 0 : 1).replace('.', ',')} cm` : `${mm.toFixed(mm < 1 ? 1 : 0).replace('.', ',')} mm`;
+  const fmtMM = mm => mm >= 10 ? `${(mm / 10).toFixed(mm >= 100 ? 0 : 1).replace('.', ',')} cm` : `${mm.toFixed(1).replace('.', ',')} mm`;
   // tarjeta de dato: rótulo pequeño, cifra grande, explicación
   function dataCard(t, t0, t1, y, kick, value, sub, o = {}) {
     const a = win(t, t0, t1, 0.6, 0.45); if (a <= 0) return;
@@ -257,13 +257,13 @@
   DIR.shot('e3_col', {
     dur: 7, look: { ...day, fogD: 1.1 }, warm: 4,
     cam: [
-      { t: 0, x: 0, y: 0, z: 9000, dist: 46, head: 62, pitch: 4, fov: 40 },
-      { t: 7, x: 0, y: 0, z: 10500, dist: 52, head: 72, pitch: 3, fov: 40 },
+      { t: 0, x: 0.2, y: -0.3, dist: 13, head: 58, pitch: 8, fov: 42 },
+      { t: 7, x: 0.2, y: -0.3, dist: 11, head: 72, pitch: 10, fov: 42 },
     ],
     camEase: ease.sine,
     sim: t => 1500 + t * 500, rate: () => 500,
     draw(t) {
-      gradTop(0.35, 500); gradBot(0.8, 800); vignette(0.7);
+      gradTop(0.35, 500); gradBot(1.0, 1050); vignette(0.75);
       chapter(t, 0.3, 3.8, 'ESCENARIO 3 · 12 %', 'Subpliniana', 'Columna sostenida de ceniza', { y: 1400, size: 110 });
       const st = APP.src().at(1500 + t * 500), P = st.MER > 50 ? APP.src().plume(st.MER) : null;
       if (P) dataCard(t, 4.0, 6.8, 1170, 'ALTURA DE LA COLUMNA', `${(P.Ht / 1000).toFixed(1).replace('.', ',')} km`, 'sobre el nivel del mar · modelo de pluma con viento', { vsize: 100 });
@@ -272,7 +272,7 @@
     },
   });
   DIR.shot('e3_ash', {
-    dur: 6.5, look: day, overlay: 4, warm: 2, roads: true,
+    dur: 6.5, look: day, overlay: 4, bgFilter: () => 'brightness(0.86) contrast(1.12) saturate(1.1)', warm: 2, roads: true,
     cam: [
       { t: 0, x: 4, y: -9, dist: 44, head: 0, pitch: 72, fov: 38 },
       { t: 6.5, x: 4, y: -10, dist: 38, head: 6, pitch: 74, fov: 38 },
@@ -280,7 +280,7 @@
     camEase: ease.sine,
     sim: t => 14000, rate: () => 1,
     draw(t) {
-      gradTop(0.5, 500); gradBot(0.6, 600); vignette(0.6);
+      gradTop(0.8, 520); gradBot(0.6, 600); vignette(0.6);
       // leyenda de isópacas
       const a = win(t, 0.4, 6.3); const lx = 72, ly = 300; txt('CENIZA ACUMULADA', lx, ly, { size: 24, weight: 650, track: 5, alpha: a, color: C.acc2 });
       const c = DIR.ctx; const g = c.createLinearGradient(lx, 0, lx + 600, 0); ['#ffed8c', '#ff9e33', '#db3819', '#73091f'].forEach((col, i) => g.addColorStop(i / 3, col));
@@ -288,7 +288,7 @@
       txt('0,1 mm', lx, ly + 76, { size: 22, weight: 500, font: F.mono, alpha: a * 0.8 }); txt('30 cm', lx + 600, ly + 76, { size: 22, weight: 500, font: F.mono, alpha: a * 0.8, align: 'right' });
       place('Melipeuco', MELI[0], MELI[1], t, 0.4, 6.3, { size: 34, weight: 750 });
       const sA = meliS();
-      dataCard(t, 1.2, 6.3, 1170, 'CENIZA EN MELIPEUCO', fmtMM(sA.ash || 0), (sA.ash || 0) >= 100 ? 'techos livianos en riesgo de colapso' : (sA.ash || 0) >= 10 ? 'daño a cultivos, agua y vías · usar mascarilla' : 'molestias respiratorias · proteger el agua', { color: (sA.ash || 0) >= 100 ? C.red : C.acc });
+      dataCard(t, 1.2, 6.3, 1170, 'CENIZA EN MELIPEUCO', fmtMM(sA.ash || 0), (sA.ash || 0) >= 100 ? 'techos livianos en riesgo de colapso' : (sA.ash || 0) >= 10 ? 'daño a cultivos, agua y vías · usar mascarilla' : (sA.ashT > 0 ? `empieza a caer a los ${fmtDur(sA.ashT)} · ` : '') + 'mascarilla y agua tapada', { color: (sA.ash || 0) >= 100 ? C.red : C.acc });
       hud(t, {});
       fadeOut(t, 6.5, 0.3);
     },
