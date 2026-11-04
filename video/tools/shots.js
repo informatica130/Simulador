@@ -203,8 +203,8 @@
   DIR.shot('e1_lava', {
     dur: 6.5, look: night, warm: 3, glowK: 0.3, bloomK: 0.6,
     cam: [
-      { t: 0, x: -0.45, y: 0.05, dist: 4.8, head: 70, pitch: 22, fov: 38 },
-      { t: 6.5, x: -0.55, y: 0.0, dist: 4.1, head: 90, pitch: 26, fov: 38 },
+      { t: 0, x: -0.4, y: 0.0, dist: 9.0, head: 74, pitch: 15, fov: 38 },
+      { t: 6.5, x: -0.45, y: 0.0, dist: 7.6, head: 92, pitch: 18, fov: 38 },
     ],
     camEase: ease.inOut,
     sim: t => 2400 + t * 900, rate: () => 900,
@@ -216,7 +216,7 @@
     },
   });
   DIR.shot('e1_meli', {
-    dur: 6, look: night, warm: 3, roads: true, glowK: 0.35, bloomK: 0.6,
+    dur: 6, look: { ...night, exp: 1.45 }, warm: 3, roads: true, glowK: 0.35, bloomK: 0.6,
     cam: [
       { t: 0, x: 2.4, y: -12.5, dist: 15, head: 340, pitch: 15, fov: 38 },
       { t: 6, x: 2.1, y: -11.0, dist: 17, head: 345, pitch: 17, fov: 38 },
