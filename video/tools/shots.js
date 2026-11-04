@@ -237,10 +237,10 @@
   // =================================================================== CAPÍTULO 2 · EFUSIVA (escenario tipo 1751)
   let trLava = null;
   DIR.shot('e2_flow', {
-    dur: 8, look: day, daylight: true, warm: 3,
+    dur: 8, look: { ...day, exp: 1.1 }, hour: 7.2, overlay: 3, warm: 3, glowK: 0.3, bloomK: 0.5,
     init() { trLava = DIR.trackFront('lava', 1200, 21600, 24); },
     cam: t => { const st = 1200 + (t / 8) * (21600 - 1200); const f = DIR.along(trLava, st) || { x: 3, y: -6 };
-      const k = ease.sine(t / 8); return { x: lerp(1.2, f.x, 0.55), y: lerp(-2, f.y, 0.55), dist: lerp(15, 19, k), head: lerp(318, 330, k), pitch: lerp(30, 34, k), fov: 38 }; },
+      const k = ease.sine(t / 8); return { x: lerp(1.2, f.x, 0.75), y: lerp(-2, f.y, 0.75), dist: lerp(11, 14, k), head: lerp(318, 330, k), pitch: lerp(30, 34, k), fov: 38 }; },
     sim: t => 1200 + (t / 8) * (21600 - 1200), rate: () => (21600 - 1200) / 8,
     draw(t) {
       gradTop(0.45, 520); gradBot(0.8, 800); vignette(0.75);
