@@ -62,6 +62,12 @@
     A.S.show.roads = !!sh.roads; A.S.show.labels = false; A.S.show.arrows = false; A.S.show.daylight = !!sh.daylight; A.S.show.trees = sh.trees !== false; A.applyShow();
     A.setOverlay(sh.overlay || 0); A.terr.U.uBase.value = sh.base || 0; A.terr.U.uArrMax.value = sh.arrMax || 180; A.terr.U.uArrIso.value = sh.arrIso || 10;
     if (sh.hour != null) A.S.hour = sh.hour;
+    // intensidad del brillo incandescente (partículas aditivas) y del bloom, por toma
+    const gm = A.fx.glow.mat;
+    if (!gm.uniforms.uGlowK) { gm.uniforms.uGlowK = { value: 1 }; gm.fragmentShader = gm.fragmentShader.replace('void main(){', 'uniform float uGlowK;\nvoid main(){').replace('vCol.rgb * vGlow * a, 1.0)', 'vCol.rgb * vGlow * a * uGlowK, 1.0)'); gm.needsUpdate = true; }
+    gm.uniforms.uGlowK.value = sh.glowK ?? 1;
+    if (DIR._bloom0 == null) DIR._bloom0 = A.bloom.strength;
+    A.bloom.strength = DIR._bloom0 * (sh.bloomK ?? 1);
     DIR.look = sh.look || null;
     if (sh.init) sh.init();
     DIR.seek(0);

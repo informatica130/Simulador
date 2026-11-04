@@ -186,10 +186,10 @@
 
   // =================================================================== CAPÍTULO 1 · ESTROMBOLIANA (escenario tipo 2008)
   DIR.shot('e1_title', {
-    dur: 6, look: night, warm: 4,
+    dur: 6, look: night, warm: 4, glowK: 0.3, bloomK: 0.6,
     cam: [
-      { t: 0, x: 0.03, y: 0, z: 3500, dist: 3.4, head: 105, pitch: 13, fov: 40 },
-      { t: 6, x: 0.03, y: 0, z: 3500, dist: 2.9, head: 128, pitch: 15, fov: 40 },
+      { t: 0, x: 0.03, y: 0, z: 3300, dist: 9, head: 105, pitch: 9, fov: 40 },
+      { t: 6, x: 0.03, y: 0, z: 3300, dist: 7.8, head: 122, pitch: 10, fov: 40 },
     ],
     camEase: ease.sine,
     sim: t => 900 + t * 30, rate: () => 30,
@@ -201,10 +201,10 @@
     },
   });
   DIR.shot('e1_lava', {
-    dur: 6.5, look: night, warm: 3,
+    dur: 6.5, look: night, warm: 3, glowK: 0.3, bloomK: 0.6,
     cam: [
-      { t: 0, x: -1.3, y: 0.1, dist: 6.5, head: 72, pitch: 20, fov: 38 },
-      { t: 6.5, x: -1.6, y: -0.2, dist: 5.6, head: 92, pitch: 24, fov: 38 },
+      { t: 0, x: -0.45, y: 0.05, dist: 4.8, head: 70, pitch: 22, fov: 38 },
+      { t: 6.5, x: -0.55, y: 0.0, dist: 4.1, head: 90, pitch: 26, fov: 38 },
     ],
     camEase: ease.inOut,
     sim: t => 2400 + t * 900, rate: () => 900,
@@ -216,7 +216,7 @@
     },
   });
   DIR.shot('e1_meli', {
-    dur: 6, look: night, warm: 3, roads: true,
+    dur: 6, look: night, warm: 3, roads: true, glowK: 0.35, bloomK: 0.6,
     cam: [
       { t: 0, x: 2.4, y: -12.5, dist: 15, head: 340, pitch: 15, fov: 38 },
       { t: 6, x: 2.1, y: -11.0, dist: 17, head: 345, pitch: 17, fov: 38 },
