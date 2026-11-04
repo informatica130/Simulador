@@ -3,3 +3,4 @@ node_modules/
 *.log
 video/work/
 video/*.mp4
+video/*.m4a
