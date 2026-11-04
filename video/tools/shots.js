@@ -238,14 +238,14 @@
   let trLava = null;
   DIR.shot('e2_flow', {
     dur: 8, look: day, daylight: true, warm: 3,
-    init() { trLava = DIR.trackFront('lava', 3600, 86400, 24); },
-    cam: t => { const st = 3600 + (t / 8) * (86400 - 3600); const f = DIR.along(trLava, st) || { x: 3, y: -6 };
+    init() { trLava = DIR.trackFront('lava', 1200, 21600, 24); },
+    cam: t => { const st = 1200 + (t / 8) * (21600 - 1200); const f = DIR.along(trLava, st) || { x: 3, y: -6 };
       const k = ease.sine(t / 8); return { x: lerp(1.2, f.x, 0.55), y: lerp(-2, f.y, 0.55), dist: lerp(15, 19, k), head: lerp(318, 330, k), pitch: lerp(30, 34, k), fov: 38 }; },
-    sim: t => 3600 + (t / 8) * (86400 - 3600), rate: () => (86400 - 3600) / 8,
+    sim: t => 1200 + (t / 8) * (21600 - 1200), rate: () => (21600 - 1200) / 8,
     draw(t) {
       gradTop(0.45, 520); gradBot(0.8, 800); vignette(0.75);
       chapter(t, 0.3, 4.2, 'ESCENARIO 2 · 25 %', 'Efusiva', 'Coladas de lava durante días', { y: 1400, size: 110 });
-      const st = 3600 + (t / 8) * (86400 - 3600), f = DIR.along(trLava, st);
+      const st = 1200 + (t / 8) * (21600 - 1200), f = DIR.along(trLava, st);
       if (f) { const dkm = Math.hypot(f.x - MELI[0], f.y - MELI[1]); dataCard(t, 4.4, 7.8, 1170, 'FRENTE DE LA LAVA', `a ${dkm.toFixed(1).replace('.', ',')} km`, 'de Melipeuco · avanza por el Truful-Truful', { vsize: 96 }); }
       place('Melipeuco', MELI[0], MELI[1], t, 0.5, 7.8, { size: 32, weight: 700 });
       hud(t, { clock: st, days: true, clockLabel: 'TIEMPO DE ERUPCIÓN' });

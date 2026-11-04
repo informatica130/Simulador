@@ -6,7 +6,7 @@ const SCEN = {
   pliniana: { esc: 'pliniana', tEnd: 21600 },
   e1640: { esc: 'e1640', wto: 140, tEnd: 14400 },
   e2008: { esc: 'e2008', hour: 21.3, tEnd: 14400 },
-  e1751: { esc: 'e1751', tEnd: 86400 },
+  e1751: { esc: 'e1751', tEnd: 21600 },
 };
 const SESSIONS = {
   reposo: { esc: 'reposo', scen: 'reposo', shots: ['s01_open', 's02_meli', 's99_end'] },
