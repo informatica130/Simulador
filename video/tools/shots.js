@@ -298,8 +298,8 @@
   DIR.shot('e4_col', {
     dur: 6.5, look: { ...day, fogD: 1.1 }, warm: 4,
     cam: [
-      { t: 0, x: 0, y: 0, z: 12000, dist: 60, head: 340, pitch: 4, fov: 42 },
-      { t: 6.5, x: 0, y: 0, z: 13500, dist: 66, head: 348, pitch: 3, fov: 42 },
+      { t: 0, x: 0, y: 0, z: 8200, dist: 33, head: 338, pitch: 2, fov: 42 },
+      { t: 6.5, x: 0, y: 0, z: 9000, dist: 38, head: 348, pitch: 3, fov: 42 },
     ],
     camEase: ease.sine,
     sim: t => 300 + t * 260, rate: () => 260,
@@ -327,43 +327,48 @@
       hud(t, { clock: 1500 + t * 240, rec: true });
     },
   });
-  let trLah = null;
+  // datos del análisis del punto de control (analyze.py): frente del lahar hacia Melipeuco
+  const VP = () => (window.VDATA && VDATA.pliniana) || { track: [], arr1: -1 };
+  let trLah = null, tLah = [6000, 14000];
+  const smooth = (tr, r = 3) => tr.map((p, i) => { let x = 0, y = 0, d = 0, w = 0; for (let k = -r; k <= r; k++) { const q = tr[Math.max(0, Math.min(tr.length - 1, i + k))]; x += q.x; y += q.y; d += q.d; w++; } return { t: p.t, x: x / w, y: y / w, d: d / w }; });
+  const alongD = (tr, t) => { if (!tr || !tr.length) return null; if (t <= tr[0].t) return tr[0]; const L = tr[tr.length - 1]; if (t >= L.t) return L;
+    let i = 0; while (tr[i + 1].t < t) i++; const a = tr[i], b = tr[i + 1], f = (t - a.t) / (b.t - a.t); return { x: lerp(a.x, b.x, f), y: lerp(a.y, b.y, f), d: lerp(a.d, b.d, f) }; };
   DIR.shot('e4_lahar', {
-    dur: 7, look: day, warm: 3, roads: true,
-    init() { const g = meliG(); const tA = g.arr > 0 ? g.arr : 7200; DIR._tLah = [Math.max(600, tA * 0.35), tA * 1.05];
-      trLah = DIR.trackFront('lahar', DIR._tLah[0], DIR._tLah[1], 18, fr => fr.slice().sort((a, b) => Math.hypot(a.x - MELI[0], a.y - MELI[1]) - Math.hypot(b.x - MELI[0], b.y - MELI[1]))[0]); },
-    cam: t => { const [a, b] = DIR._tLah; const st = a + (b - a) * t / 7; const f = DIR.along(trLah, st) || { x: 5, y: -10 };
-      return { x: f.x, y: f.y, dist: 7.5, head: lerp(200, 190, t / 7), pitch: 28, fov: 40 }; },
-    sim: t => { const [a, b] = DIR._tLah; return a + (b - a) * t / 7; }, rate: () => { const [a, b] = DIR._tLah; return (b - a) / 7; },
+    dur: 8, look: day, warm: 3, roads: true,
+    init() { const V = VP(); tLah = [6000, (V.arr1 > 0 ? V.arr1 : 13600) + 240]; trLah = smooth(V.track.filter(p => p.t >= tLah[0] - 1200 && p.t <= tLah[1] + 1200), 3); },
+    cam: t => { const st = lerp(tLah[0], tLah[1], t / 8), f = alongD(trLah, st) || { x: 5, y: -12 }, k = ease.inOut(t / 8);
+      return { x: f.x, y: f.y, dist: lerp(7.0, 9.5, k), head: lerp(200, 214, k), pitch: lerp(27, 31, k), fov: 40 }; },
+    sim: t => lerp(tLah[0], tLah[1], t / 8), rate: () => (tLah[1] - tLah[0]) / 8,
     draw(t) {
       gradTop(0.4, 500); gradBot(0.8, 800); vignette(0.75);
-      const [a, b] = DIR._tLah, st = a + (b - a) * t / 7, f = DIR.along(trLah, st);
-      kicker('LAHAR · FLUJO DE BARRO Y ROCAS', 72, 1160, t, 0.4, 6.8, C.acc2);
-      if (f) { const dkm = Math.hypot(f.x - MELI[0], f.y - MELI[1]);
-        reveal(`a ${dkm.toFixed(1).replace('.', ',')} km`, 66, 1290, t, 0.6, 6.8, { size: 120, weight: 800, font: F.disp, track: -3 });
-        reveal('de Melipeuco', 72, 1356, t, 0.8, 6.8, { size: 44, weight: 600, color: C.tx2 }); }
-      place('Melipeuco', MELI[0], MELI[1], t, 0.3, 6.8, { size: 34, weight: 750 });
+      const st = lerp(tLah[0], tLah[1], t / 8), f = alongD(trLah, st);
+      kicker('LAHAR · FLUJO DE BARRO Y ROCAS', 72, 1160, t, 0.4, 7.8, C.acc2);
+      if (f) { const dkm = Math.max(0.1, f.d), s1 = dkm < 1.05 ? 'a menos de 1 km' : `a ${dkm.toFixed(1).replace('.', ',')} km`;
+        reveal(s1, 66, 1290, t, 0.6, 7.8, { size: dkm < 1.05 ? 96 : 120, weight: 800, font: F.disp, track: -3, color: dkm < 2 ? '#ff6a4d' : C.tx });
+        reveal('de Melipeuco', 72, 1356, t, 0.8, 7.8, { size: 44, weight: 600, color: C.tx2 }); }
+      place('Melipeuco', MELI[0], MELI[1], t, 0.3, 7.8, { size: 34, weight: 750 });
       hud(t, { clock: st, rec: true });
     },
   });
   DIR.shot('e4_arr', {
-    dur: 7, look: day, overlay: 2, warm: 2, roads: true,
+    dur: 7, look: day, overlay: 2, arrMax: 300, arrIso: 30, warm: 2, roads: true,
     cam: [
-      { t: 0, x: 2.5, y: -9, dist: 36, head: 0, pitch: 70, fov: 38 },
-      { t: 7, x: 3.0, y: -13, dist: 22, head: 4, pitch: 66, fov: 38 },
+      { t: 0, x: 2.8, y: -8, dist: 38, head: 0, pitch: 70, fov: 38 },
+      { t: 7, x: 3.6, y: -14.5, dist: 20, head: 4, pitch: 64, fov: 38 },
     ],
     camEase: ease.inOut,
     sim: () => DIR.M.tEnd - 60, rate: () => 1,
     draw(t) {
       gradTop(0.5, 500); gradBot(0.6, 700); vignette(0.6);
       const a = win(t, 0.3, 6.8); const lx = 72, ly = 300;
-      txt('MINUTOS HASTA QUE LLEGA EL LAHAR', lx, ly, { size: 24, weight: 650, track: 4, alpha: a, color: C.acc2 });
+      txt('TIEMPO HASTA QUE LLEGA EL LAHAR', lx, ly, { size: 24, weight: 650, track: 4, alpha: a, color: C.acc2 });
       const c = DIR.ctx; const g = c.createLinearGradient(lx, 0, lx + 600, 0); ['#d9141a', '#f0a23a', '#fae566'].forEach((col, i) => g.addColorStop(i / 2, col));
       c.save(); c.globalAlpha = a; c.fillStyle = g; rrect(lx, ly + 24, 600, 16, 8); c.fill(); c.restore();
-      txt('0', lx, ly + 76, { size: 22, weight: 500, font: F.mono, alpha: a * 0.8 }); txt('3 h', lx + 600, ly + 76, { size: 22, weight: 500, font: F.mono, alpha: a * 0.8, align: 'right' });
-      txt('líneas cada 10 min', lx, ly + 112, { size: 22, weight: 500, alpha: a * 0.6 });
-      const gm = meliG();
-      pin(gm.x || MELI[0], gm.y || MELI[1], 'PUENTE ALLIPÉN', gm.arr > 0 ? `llega en ${fmtDur(gm.arr)}` : 'no llega', t, 1.4, 6.8, { len: 110, size: 40, subSize: 30, color: C.red, scolor: '#fff' });
+      txt('0', lx, ly + 76, { size: 22, weight: 500, font: F.mono, alpha: a * 0.8 }); txt('5 h', lx + 600, ly + 76, { size: 22, weight: 500, font: F.mono, alpha: a * 0.8, align: 'right' });
+      txt('líneas cada 30 min', lx, ly + 112, { size: 22, weight: 500, alpha: a * 0.6 });
+      const V = VP(), gt = M().g.truful || {};
+      if (gt.arr > 0) pin(gt.x, gt.y, 'PUENTE TRUFUL-TRUFUL', `cortado a las ${fmtDur(gt.arr)}`, t, 1.2, 6.8, { len: 90, size: 34, subSize: 26, color: C.acc2, scolor: '#fff' });
+      pin(MELI[0], MELI[1], 'MELIPEUCO', V.arr1 > 0 ? `a 1 km: ${fmtDur(V.arr1)}` : 'sin lahar', t, 2.4, 6.8, { len: 150, size: 44, subSize: 30, color: C.red, scolor: '#fff' });
       hud(t, {});
       fadeOut(t, 7, 0.3);
     },
@@ -377,43 +382,45 @@
       { t: 13, x: 3.1, y: -17.4, dist: 4.8, head: 0, pitch: 34, fov: 40 },
     ],
     camEase: ease.sine,
-    sim: t => { const g = meliG(); return (g.arr > 0 ? g.arr : 5400) + 1200 + t * 60; }, rate: () => 60,
-    bgFilter: t => `blur(${(5 + 7 * ss(0.3, 2.0, t)).toFixed(1)}px) brightness(${(0.8 - 0.3 * ss(0.3, 2.0, t)).toFixed(2)}) saturate(0.9)`,
+    sim: t => { const V = VP(); return (V.arr1 > 0 ? V.arr1 : 13600) + 1200 + t * 60; }, rate: () => 60,
+    bgFilter: t => `blur(${(5 + 7 * ss(0.3, 2.0, t)).toFixed(1)}px) brightness(${(0.8 - 0.38 * ss(0.3, 2.0, t)).toFixed(2)}) saturate(0.9)`,
     draw(t) {
       vignette(0.9);
-      const g = meliG(), arr = g.arr > 0 ? g.arr / 60 : null;
+      const V = VP(), gt = M().g.truful || {}, sA = meliS(), c = DIR.ctx;
+      const tArr = V.arr1 > 0 ? V.arr1 : 13600;
       kicker('MELIPEUCO · PEOR ESCENARIO', 72, 330, t, 0.4, 12.8);
       reveal('¿Cuánto tiempo', 66, 440, t, 0.6, 12.8, { size: 92, weight: 800, font: F.disp, track: -2 });
       reveal('hay para evacuar?', 66, 540, t, 0.8, 12.8, { size: 92, weight: 800, font: F.disp, track: -2 });
-      // barra de tiempo: 0 → llegada del lahar
-      const total = arr || 120, x0 = 72, x1 = 1008, X = m => x0 + (x1 - x0) * Math.min(1, m / (total * 1.12));
-      const a = win(t, 1.6, 12.8, 0.6, 0.5), c = DIR.ctx, y = 760;
+      // línea de tiempo vertical, proporcional al tiempo real de la simulación
+      const y0 = 720, y1 = 1400, lx = 292, Y = s => y0 + (y1 - y0) * Math.min(1, s / tArr);
+      const k = ease.inOut((t - 1.6) / 3.4), yk = lerp(y0, y1, k), a = win(t, 1.4, 12.8, 0.5, 0.5);
       if (a > 0) {
-        const k = ease.inOut((t - 1.8) / 2.4);
-        c.save(); c.globalAlpha = a * 0.18; c.fillStyle = '#fff'; rrect(x0, y, x1 - x0, 14, 7); c.fill(); c.restore();
-        c.save(); c.globalAlpha = a; const gr = c.createLinearGradient(x0, 0, X(total), 0); gr.addColorStop(0, C.acc2); gr.addColorStop(1, C.red); c.fillStyle = gr; rrect(x0, y, Math.max(14, (X(total) - x0) * k), 14, 7); c.fill(); c.restore();
-        txt('ERUPCIÓN', x0, y - 26, { size: 22, weight: 650, track: 3, alpha: a * 0.8 });
-        const ta = ss(3.6, 4.2, t);
-        txt(arr ? `${Math.round(arr * k)} min` : '—', X(total), y - 26, { size: 52, weight: 800, font: F.disp, align: 'right', alpha: a, color: '#fff' });
-        txt('EL LAHAR LLEGA AL PUENTE', X(total), y + 64, { size: 22, weight: 650, track: 3, align: 'right', alpha: a * ta * 0.85, color: C.red });
-        // etapas de evacuación (estimación)
-        const steps = [['Alerta y aviso', 10, '#7cc4ff'], ['Preparación', 10, '#49d18a'], ['Traslado a zona alta', 20, '#c79bff']];
-        let m0 = 0; const ys = 960;
-        steps.forEach(([lab, dm, col], i) => {
-          const t0 = 4.6 + i * 0.7, b = win(t, t0, 12.8, 0.5, 0.5); if (b <= 0) { m0 += dm; return; }
-          const kk = ease.outQ((t - t0) / 0.9), xa = X(m0), xb = X(m0 + dm);
-          c.save(); c.globalAlpha = b; c.fillStyle = col; rrect(xa, ys + i * 120, Math.max(10, (xb - xa) * kk), 40, 10); c.fill(); c.restore();
-          txt(`${lab}`, xa, ys + i * 120 - 14, { size: 30, weight: 650, alpha: b });
-          txt(`~${dm} min`, xb + 14, ys + i * 120 + 31, { size: 28, weight: 600, font: F.mono, alpha: b * kk });
-          m0 += dm;
+        c.save(); c.globalAlpha = a * 0.22; c.fillStyle = '#fff'; c.fillRect(lx - 2, y0, 4, y1 - y0); c.restore();
+        c.save(); c.globalAlpha = a; const gr = c.createLinearGradient(0, y0, 0, y1); gr.addColorStop(0, C.acc2); gr.addColorStop(1, C.red); c.fillStyle = gr; c.fillRect(lx - 3, y0, 6, Math.max(0, yk - y0)); c.restore();
+        // franja de evacuación (aviso + preparación + traslado ≈ 40 min desde el inicio)
+        const ev = 40 * 60, ke = ease.outQ((t - 5.4) / 1.2), eb = win(t, 5.4, 12.8, 0.5, 0.5);
+        if (eb > 0) { c.save(); c.globalAlpha = eb; c.fillStyle = C.ok; c.shadowColor = C.ok; c.shadowBlur = 16; rrect(lx - 9, y0, 18, (Y(ev) - y0) * ke, 9); c.fill(); c.restore();
+          txt('EVACUAR', lx - 34, Y(ev) * 0.5 + y0 * 0.5 + 2, { size: 22, weight: 700, track: 3, align: 'right', alpha: eb, color: C.ok });
+          txt('~40 min', lx - 34, Y(ev) * 0.5 + y0 * 0.5 + 34, { size: 28, weight: 600, font: F.mono, align: 'right', alpha: eb, color: C.ok }); }
+        const evs = [[0, 'Erupción', 'comienza la fase explosiva', C.tx]];
+        if (sA.ashT > 0) evs.push([sA.ashT, 'Cae ceniza en el pueblo', `${fmtMM(sA.ash || 0)} acumulados en total`, C.tx]);
+        if (gt.arr > 0) evs.push([gt.arr, 'Lahar corta el puente', 'Truful-Truful, camino S-51-R', C.acc2]);
+        evs.push([tArr, 'El lahar llega a Melipeuco', V.h1 ? `barro de ${V.h1.toFixed(1).replace('.', ',')} m a 1 km del centro` : 'a 1 km del centro', '#ff6a4d']);
+        evs.forEach(([ts, ti, sub, col]) => {
+          const y = Y(ts), b = ss(y - 4, y + 30, yk) * a; if (b <= 0) return;
+          const kk = ease.outQ((yk - y) / 120);
+          c.save(); c.globalAlpha = b; c.fillStyle = col; c.beginPath(); c.arc(lx, y, 11, 0, 7); c.fill(); c.fillStyle = '#0b0d12'; c.beginPath(); c.arc(lx, y, 4.5, 0, 7); c.fill(); c.restore();
+          const h = Math.floor(ts / 3600), m = Math.round((ts % 3600) / 60);
+          txt(`${h}:${String(m).padStart(2, '0')}`, lx - 34, y + 12, { size: 36, weight: 700, font: F.mono, align: 'right', alpha: b, color: col });
+          txt(ti, lx + 38 + (1 - kk) * 20, y + 4, { size: 38, weight: 750, font: F.disp, alpha: b * kk, color: col === C.tx ? C.tx : col });
+          txt(sub, lx + 40 + (1 - kk) * 20, y + 44, { size: 27, weight: 500, alpha: b * kk * 0.8, color: C.tx2 });
         });
-        const margin = arr ? arr - 40 : null;
-        if (margin != null) {
-          const b = win(t, 7.4, 12.8, 0.7, 0.5);
-          reveal(margin > 0 ? `Margen: ${Math.round(margin)} min` : 'Sin margen', 66, 1420, t, 7.4, 12.8, { size: 84, weight: 800, font: F.disp, track: -2, color: margin > 15 ? C.ok : C.red });
-          reveal('Evacuar al primer aviso, sin esperar a ver el lahar', 72, 1480, t, 7.8, 12.8, { size: 32, weight: 500, color: C.tx2 });
-        }
-        reveal('Etapas estimadas a pie (1–2 km); dependen del aviso oficial', 72, 1560, t, 8.4, 12.8, { size: 22, weight: 500, color: C.tx3 });
+        txt('HORAS DESDE EL INICIO', 72, y0 - 56, { size: 20, weight: 650, track: 4, alpha: a * 0.6 });
+        const margin = Math.round((tArr - 40 * 60) / 60);
+        const mh = margin >= 90 ? `~${Math.floor(margin / 60)} h ${String(Math.round((margin % 60) / 5) * 5).padStart(2, '0')} min`.replace(' 00 min', ' h').replace(' h h', ' h') : `${margin} min`;
+        reveal(`Margen: ${mh}`, 66, 1560, t, 7.6, 12.8, { size: 84, weight: 800, font: F.disp, track: -2, color: C.ok });
+        reveal('solo si se evacúa al primer aviso, sin esperar a ver el lahar', 72, 1620, t, 8.0, 12.8, { size: 30, weight: 500, color: C.tx });
+        reveal('Etapas estimadas: aviso 10 · preparación 10 · traslado a pie a zona alta 20 min', 72, 1690, t, 8.6, 12.8, { size: 22, weight: 500, color: C.tx3 });
       }
       hud(t, {});
       fadeIn(t, 0.25); fadeOut(t, 13, 0.35);

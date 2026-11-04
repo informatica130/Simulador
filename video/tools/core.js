@@ -60,7 +60,7 @@
   DIR.setup = id => {
     const A = APP, sh = DIR.SHOTS[id]; cur = sh; curId = id;
     A.S.show.roads = !!sh.roads; A.S.show.labels = false; A.S.show.arrows = false; A.S.show.daylight = !!sh.daylight; A.S.show.trees = sh.trees !== false; A.applyShow();
-    A.setOverlay(sh.overlay || 0); A.terr.U.uBase.value = sh.base || 0;
+    A.setOverlay(sh.overlay || 0); A.terr.U.uBase.value = sh.base || 0; A.terr.U.uArrMax.value = sh.arrMax || 180; A.terr.U.uArrIso.value = sh.arrIso || 10;
     if (sh.hour != null) A.S.hour = sh.hour;
     DIR.look = sh.look || null;
     if (sh.init) sh.init();

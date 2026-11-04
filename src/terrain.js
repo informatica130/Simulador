@@ -99,7 +99,7 @@ void main(){
 const TERRAIN_FS = /* glsl */`
 precision highp float; precision highp int; precision highp sampler2D;
 uniform sampler2D tSat, tSatHi, tH30, tDet, tHf, tShadow; uniform ivec2 uN30; uniform vec4 uGrid; uniform vec4 uSatB; uniform vec4 uHiB; uniform float uHiOn;
-uniform float uEx; uniform int uBase; uniform int uOverlay; uniform float uAccCount; uniform float uSimT;
+uniform float uEx; uniform int uBase; uniform int uOverlay; uniform float uArrMax; uniform float uArrIso; uniform float uAccCount; uniform float uSimT;
 uniform float uShadows; uniform float uContours; uniform float uSnowVis; uniform float uNight; uniform float uZone;
 varying vec3 vW; varying vec2 vXY; varying float vZ; varying vec2 vDG; varying vec3 vNv;
 varying vec4 vA; varying vec4 vB; varying vec4 vC; varying vec4 vD; varying float vIce;
@@ -249,8 +249,8 @@ void main(){
   // --- capas de análisis
   vec4 ov = vec4(0.0);
   if (uOverlay == 1 && vB.z > 0.05) { float t = clamp(log(1.0 + vB.z) / log(31.0), 0.0, 1.0); ov = vec4(ramp(t), 0.70); }
-  else if (uOverlay == 2 && vB.w > 0.0) { float tm = (vB.w - 1.0) / 60.0; float t = clamp(tm / 180.0, 0.0, 1.0);
-    ov = vec4(mix(vec3(0.85, 0.08, 0.10), vec3(0.98, 0.90, 0.40), sqrt(t)), 0.65); ov.rgb = mix(ov.rgb, vec3(0.05), iso(tm, 10.0) * 0.85); }
+  else if (uOverlay == 2 && vB.w > 0.0) { float tm = (vB.w - 1.0) / 60.0; float t = clamp(tm / uArrMax, 0.0, 1.0);
+    ov = vec4(mix(vec3(0.85, 0.08, 0.10), vec3(0.98, 0.90, 0.40), sqrt(t)), 0.65); ov.rgb = mix(ov.rgb, vec3(0.05), iso(tm, uArrIso) * 0.85); }
   else if (uOverlay == 3 && lavaMax > 0.05) { ov = vec4(mix(vec3(1.0, 0.55, 0.1), vec3(0.6, 0.0, 0.05), clamp(lavaMax / 15.0, 0.0, 1.0)), 0.7); }
   else if (uOverlay == 4 && ash > 0.1) { float t = clamp(log(1.0 + ash) / log(1.0 + 300.0), 0.0, 1.0); ov = vec4(ramp(t), 0.55);
     float lg = log(ash) / log(10.0); ov.rgb = mix(ov.rgb, vec3(0.05), iso(lg, 1.0) * 0.9); ov.a = max(ov.a, iso(lg, 1.0)); }
@@ -458,7 +458,7 @@ export function createTerrain(D, solver, satTex, opts = {}) {
     uS: { value: solver.s }, uSimN: { value: new THREE.Vector2(solver.nx, solver.ny) }, uN30: { value: new THREE.Vector2(D.nx30, D.ny30) }, uStep: { value: step },
     uAccN: { value: new THREE.Vector2(1, 1) }, uAccS: { value: 1 }, uProbCh: { value: 0 }, uAccCount: { value: 0 },
     uGrid: { value: new THREE.Vector4(GR.X0, GR.Y1, GR.cell, D.cell30) }, uSatB: { value: new THREE.Vector4(GR.bx0, GR.bx1, GR.by0, GR.by1) },
-    uBase: { value: 0 }, uOverlay: { value: 0 }, uZone: { value: 1 }, uSimT: { value: 0 }, uShadows: { value: 1 }, uContours: { value: 0 }, uSnowVis: { value: 1 },
+    uBase: { value: 0 }, uOverlay: { value: 0 }, uArrMax: { value: 180 }, uArrIso: { value: 10 }, uZone: { value: 1 }, uSimT: { value: 0 }, uShadows: { value: 1 }, uContours: { value: 0 }, uSnowVis: { value: 1 },
   };
   const mat = new THREE.ShaderMaterial({ vertexShader: TERRAIN_VS, fragmentShader: TERRAIN_FS, uniforms: U, extensions: { derivatives: true } });
   const mesh = new THREE.Mesh(g, mat); mesh.frustumCulled = false;
