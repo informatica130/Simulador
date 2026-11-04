@@ -81,7 +81,7 @@
     ],
     camEase: ease.lin,
     sim: t => 1200 + t * 10,
-    bgFilter: t => `blur(${(3 + 9 * ss(4.6, 6.4, t)).toFixed(1)}px) brightness(${(0.55 - 0.12 * ss(4.6, 6.4, t)).toFixed(2)}) saturate(0.9)`,
+    bgFilter: t => `blur(${(3 + 9 * ss(4.4, 6.0, t)).toFixed(1)}px) brightness(${(0.55 - 0.12 * ss(4.4, 6.0, t)).toFixed(2)}) saturate(0.9)`,
     draw(t) {
       vignette(1);
       // --- línea de tiempo de erupciones 1640–2009
@@ -108,17 +108,17 @@
         txt('Uno de los volcanes más activos de Sudamérica', 72, 1000, { size: 34, weight: 500, alpha: a1 * ss(4.4, 5.0, t) * 0.85, color: C.tx2 });
       }
       // --- probabilidad
-      const a2 = win(t, 6.1, 11.6, 0.6, 0.4);
+      const a2 = win(t, 5.5, 11.6, 0.6, 0.4);
       if (a2 > 0) {
-        const cx = 540, cy = 860, R = 300, k = ease.out((t - 6.2) / 2.0), p = 0.94 * k;
+        const cx = 540, cy = 860, R = 300, k = ease.out((t - 5.6) / 2.2), p = 0.94 * k;
         const c = DIR.ctx; c.save(); c.globalAlpha = a2; c.lineWidth = 26; c.lineCap = 'round';
         c.strokeStyle = 'rgba(255,255,255,0.12)'; c.beginPath(); c.arc(cx, cy, R, 0, 7); c.stroke();
         const g = c.createLinearGradient(cx - R, cy - R, cx + R, cy + R); g.addColorStop(0, C.acc2); g.addColorStop(1, C.acc);
         c.strokeStyle = g; c.shadowColor = C.acc; c.shadowBlur = 30; c.beginPath(); c.arc(cx, cy, R, -Math.PI / 2, -Math.PI / 2 + p * Math.PI * 2); c.stroke(); c.restore();
         txt(String(Math.round(94 * k)), cx - 20, cy + 70, { size: 230, weight: 800, font: F.disp, track: -8, align: 'center', alpha: a2 });
         txt('%', cx + 128, cy + 70, { size: 96, weight: 700, font: F.disp, alpha: a2 });
-        kicker('PROBABILIDAD DE ERUPCIÓN', 72, 420, t, 6.3, 11.6);
-        reveal('en los próximos 10 años', 72, 500, t, 6.5, 11.6, { size: 58, weight: 750, font: F.disp, track: -1 });
+        kicker('PROBABILIDAD DE ERUPCIÓN', 72, 420, t, 5.8, 11.6);
+        reveal('en los próximos 10 años', 72, 500, t, 6.0, 11.6, { size: 58, weight: 750, font: F.disp, track: -1 });
         reveal('1 de cada 4', 120, 1290, t, 8.0, 11.6, { size: 70, weight: 800, font: F.disp, color: C.acc2 });
         reveal('es la probabilidad en un solo año', 120, 1346, t, 8.2, 11.6, { size: 34, weight: 500, color: C.tx2 });
         reveal('Estimación estadística del registro histórico (1900–2026)', 72, 1500, t, 8.8, 11.6, { size: 24, weight: 500, color: C.tx3 });
@@ -298,13 +298,13 @@
   DIR.shot('e4_col', {
     dur: 6.5, look: { ...day, fogD: 1.1 }, warm: 4,
     cam: [
-      { t: 0, x: 0, y: 0, z: 8200, dist: 33, head: 338, pitch: 2, fov: 42 },
-      { t: 6.5, x: 0, y: 0, z: 9000, dist: 38, head: 348, pitch: 3, fov: 42 },
+      { t: 0, x: 0.2, y: -0.3, dist: 12, head: 28, pitch: 9, fov: 42 },
+      { t: 6.5, x: 0.2, y: -0.3, dist: 10, head: 44, pitch: 11, fov: 42 },
     ],
     camEase: ease.sine,
     sim: t => 300 + t * 260, rate: () => 260,
     draw(t) {
-      gradTop(0.35, 500); gradBot(0.8, 800); vignette(0.75);
+      gradTop(0.35, 500); gradBot(1.0, 1050); vignette(0.75);
       chapter(t, 0.3, 4.0, 'ESCENARIO 4 · 3 %', 'Pliniana', 'El peor caso: la columna colapsa', { y: 1400, size: 120, color: C.red });
       const st = APP.src().at(300 + t * 260), P = st.MER > 50 ? APP.src().plume(st.MER) : null;
       if (P) dataCard(t, 4.1, 6.3, 1170, 'COLUMNA ERUPTIVA', `${(P.Ht / 1000).toFixed(0)} km`, 'de altura · más alta que los aviones comerciales', { vsize: 100, color: C.red });
@@ -342,10 +342,10 @@
     draw(t) {
       gradTop(0.4, 500); gradBot(0.8, 800); vignette(0.75);
       const st = lerp(tLah[0], tLah[1], t / 8), f = alongD(trLah, st);
-      kicker('LAHAR · FLUJO DE BARRO Y ROCAS', 72, 1160, t, 0.4, 7.8, C.acc2);
+      kicker('LAHAR · FLUJO DE BARRO Y ROCAS', 72, 1160, t, 0.4, 8.2, C.acc2);
       if (f) { const dkm = Math.max(0.1, f.d), s1 = dkm < 1.05 ? 'a menos de 1 km' : `a ${dkm.toFixed(1).replace('.', ',')} km`;
-        reveal(s1, 66, 1290, t, 0.6, 7.8, { size: dkm < 1.05 ? 96 : 120, weight: 800, font: F.disp, track: -3, color: dkm < 2 ? '#ff6a4d' : C.tx });
-        reveal('de Melipeuco', 72, 1356, t, 0.8, 7.8, { size: 44, weight: 600, color: C.tx2 }); }
+        reveal(s1, 66, 1290, t, 0.6, 8.2, { size: dkm < 1.05 ? 96 : 120, weight: 800, font: F.disp, track: -3, color: dkm < 2 ? '#ff6a4d' : C.tx });
+        reveal('de Melipeuco', 72, 1356, t, 0.8, 8.2, { size: 44, weight: 600, color: C.tx2 }); }
       place('Melipeuco', MELI[0], MELI[1], t, 0.3, 7.8, { size: 34, weight: 750 });
       hud(t, { clock: st, rec: true });
     },
@@ -367,7 +367,7 @@
       txt('0', lx, ly + 76, { size: 22, weight: 500, font: F.mono, alpha: a * 0.8 }); txt('5 h', lx + 600, ly + 76, { size: 22, weight: 500, font: F.mono, alpha: a * 0.8, align: 'right' });
       txt('líneas cada 30 min', lx, ly + 112, { size: 22, weight: 500, alpha: a * 0.6 });
       const V = VP(), gt = M().g.truful || {};
-      if (gt.arr > 0) pin(gt.x, gt.y, 'PUENTE TRUFUL-TRUFUL', `cortado a las ${fmtDur(gt.arr)}`, t, 1.2, 6.8, { len: 90, size: 34, subSize: 26, color: C.acc2, scolor: '#fff' });
+      if (gt.arr > 0) pin(gt.x, gt.y, 'PUENTE TRUFUL-TRUFUL', `cortado a las ${fmtDur(gt.arr)}`, t, 1.2, 6.8, { len: 90, size: 34, subSize: 26, color: C.acc2, scolor: '#fff', align: 'left' });
       pin(MELI[0], MELI[1], 'MELIPEUCO', V.arr1 > 0 ? `a 1 km: ${fmtDur(V.arr1)}` : 'sin lahar', t, 2.4, 6.8, { len: 150, size: 44, subSize: 30, color: C.red, scolor: '#fff' });
       hud(t, {});
       fadeOut(t, 7, 0.3);
@@ -393,10 +393,10 @@
       reveal('hay para evacuar?', 66, 540, t, 0.8, 12.8, { size: 92, weight: 800, font: F.disp, track: -2 });
       // línea de tiempo vertical, proporcional al tiempo real de la simulación
       const y0 = 720, y1 = 1400, lx = 292, Y = s => y0 + (y1 - y0) * Math.min(1, s / tArr);
-      const k = ease.inOut((t - 1.6) / 3.4), yk = lerp(y0, y1, k), a = win(t, 1.4, 12.8, 0.5, 0.5);
+      const k = ease.inOut((t - 1.6) / 3.4), yk = lerp(y0, y1 + 40, k), a = win(t, 1.4, 12.8, 0.5, 0.5);
       if (a > 0) {
         c.save(); c.globalAlpha = a * 0.22; c.fillStyle = '#fff'; c.fillRect(lx - 2, y0, 4, y1 - y0); c.restore();
-        c.save(); c.globalAlpha = a; const gr = c.createLinearGradient(0, y0, 0, y1); gr.addColorStop(0, C.acc2); gr.addColorStop(1, C.red); c.fillStyle = gr; c.fillRect(lx - 3, y0, 6, Math.max(0, yk - y0)); c.restore();
+        c.save(); c.globalAlpha = a; const gr = c.createLinearGradient(0, y0, 0, y1); gr.addColorStop(0, C.acc2); gr.addColorStop(1, C.red); c.fillStyle = gr; c.fillRect(lx - 3, y0, 6, Math.max(0, Math.min(y1, yk) - y0)); c.restore();
         // franja de evacuación (aviso + preparación + traslado ≈ 40 min desde el inicio)
         const ev = 40 * 60, ke = ease.outQ((t - 5.4) / 1.2), eb = win(t, 5.4, 12.8, 0.5, 0.5);
         if (eb > 0) { c.save(); c.globalAlpha = eb; c.fillStyle = C.ok; c.shadowColor = C.ok; c.shadowBlur = 16; rrect(lx - 9, y0, 18, (Y(ev) - y0) * ke, 9); c.fill(); c.restore();
