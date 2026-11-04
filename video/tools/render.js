@@ -58,6 +58,7 @@ function encoder(file) {
       const picks = [0, Math.floor(n * 0.33), Math.floor(n * 0.66), n - 1];
       for (const f of picks) {
         const url = await page.evaluate(f => DIR.frame(f, true), Math.min(f, n - 1));
+        if (process.env.CAMDBG) log('cam', f, await page.evaluate(() => { const c = APP.camera, A = APP; const x = c.position.x, y = -c.position.z; return JSON.stringify({ x: +x.toFixed(2), y: +y.toFixed(2), z: Math.round(c.position.y * 1000 / A.S.ex), g: Math.round(A.hAt(x, y)) }); }));
         fs.writeFileSync(path.join(dir, `prev_${String(f).padStart(4, '0')}.jpg`), Buffer.from(url.split(',')[1], 'base64'));
       }
       log(`vista previa ${id} lista`); continue;

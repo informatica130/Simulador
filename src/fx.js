@@ -47,14 +47,16 @@ void main(){
   vec2 w = vec2(fbm3(q + t), fbm3(q - t + 5.2));
   float n = fbm3(q * 1.5 + w * 1.7 + t * 0.4);
   // voluta tipo coliflor: racimo de lóbulos, cada uno con su propia normal (luz y sombra)
-  float best = 1.0 - r / 0.62; vec2 cb = vec2(0.0); float rb = 0.62;
+  // mezcla suave de lóbulos (máximo suave): sin aristas ni facetas entre lóbulos
+  float v0 = 1.0 - r / 0.62, ws = exp(7.0 * v0); vec2 cs = vec2(0.0); float rs = 0.62 * ws;
   for (int k = 0; k < 5; k++) {
     float a = vSeed * 40.0 + float(k) * 1.2566 + uTime * 0.01;
     float rad = 0.36 + 0.14 * fract(vSeed * 7.0 + float(k) * 0.37);
     vec2 c = vec2(cos(a), sin(a)) * (0.62 - rad) * 1.25;
-    float v = 1.0 - length(p - c) / rad;
-    if (v > best) { best = v; cb = c; rb = rad; }
+    float v = 1.0 - length(p - c) / rad, w = exp(7.0 * v);
+    ws += w; cs += c * w; rs += rad * w;
   }
+  float best = log(ws) / 7.0 - 0.12; vec2 cb = cs / ws; float rb = rs / ws;
   float base = smoothstep(0.0, 0.42, best + (n - 0.5) * 0.6);
   float er = mix(0.05, 0.45, vAge * vAge);
   float dens = smoothstep(er, er + 0.34, base * (0.5 + 1.0 * n) - 0.06) * smoothstep(1.0, 0.7, r);

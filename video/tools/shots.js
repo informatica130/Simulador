@@ -57,36 +57,36 @@
     dur: 4.2, hour: 19.85, look: golden,
     init() { APP.S.fumQ = 2.0; },
     cam: null, mk() { return drone([
-      { t: 0, x: 6.2, y: -12.2, a: 220, lx: 0.03, ly: 0, la: 250, fov: 40 },
-      { t: 4.2, x: 4.4, y: -8.3, a: 650, lx: 0.03, ly: 0, la: 350, fov: 36 },
+      { t: 0, x: 6.2, y: -12.2, a: 260, lx: 0.03, ly: 0, la: -2600, fov: 42 },
+      { t: 4.2, x: 4.4, y: -8.3, a: 700, lx: 0.03, ly: 0, la: -2200, fov: 40 },
     ], { ease: ease.lin, shake: 7 }); },
     sim: t => 600 + t * 10,
     draw(t) {
       gradTop(0.45, 480); gradBot(0.85, 1100); vignette(0.8);
-      reveal('¿Y si el', 66, 1240, t, 1.0, 9, { size: 120, weight: 800, font: F.disp, track: -2 });
-      reveal('Llaima', 58, 1400, t, 1.25, 9, { size: 180, weight: 800, font: F.disp, track: -5 });
-      reveal('despertara?', 66, 1530, t, 1.5, 9, { size: 120, weight: 800, font: F.disp, track: -2 });
+      reveal('¿Y si el', 66, 1330, t, 1.0, 9, { size: 120, weight: 800, font: F.disp, track: -2 });
+      reveal('Llaima', 58, 1490, t, 1.25, 9, { size: 180, weight: 800, font: F.disp, track: -5 });
+      reveal('despertara?', 66, 1620, t, 1.5, 9, { size: 120, weight: 800, font: F.disp, track: -2 });
       fadeIn(t, 1.2);
     },
   });
   DIR.shot('a_orbit', {
     dur: 4.0, hour: 19.9, look: golden,
-    mk() { return orbit(0.03, 0, 4.6, 196, 232, 3650, 4.0, { lx: 0.03, ly: 0, la: 120 }, { ease: ease.lin, fov: 38, shake: 5 }); },
+    mk() { return orbit(0.03, 0, 7.5, 200, 232, 4100, 4.0, { lx: 0.03, ly: 0, la: -1700 }, { ease: ease.lin, fov: 40, shake: 5 }); },
     sim: t => 650 + t * 10,
     draw(t) {
       gradTop(0.4, 480); gradBot(0.85, 1100); vignette(0.8);
       // el título sigue en pantalla desde la toma anterior y se despide
       const a = 1 - ss(2.6, 3.6, t);
-      txt('¿Y si el', 66, 1240, { size: 120, weight: 800, font: F.disp, track: -2, alpha: a });
-      txt('Llaima', 58, 1400, { size: 180, weight: 800, font: F.disp, track: -5, alpha: a });
-      txt('despertara?', 66, 1530, { size: 120, weight: 800, font: F.disp, track: -2, alpha: a });
+      txt('¿Y si el', 66, 1330, { size: 120, weight: 800, font: F.disp, track: -2, alpha: a });
+      txt('Llaima', 58, 1490, { size: 180, weight: 800, font: F.disp, track: -5, alpha: a });
+      txt('despertara?', 66, 1620, { size: 120, weight: 800, font: F.disp, track: -2, alpha: a });
     },
   });
   DIR.shot('a_meli', {
     dur: 6.5, hour: 19.95, roads: true, look: { ...golden, exp: 1.2 },
     mk() { return drone([
-      { t: 0, x: 3.25, y: -20.4, a: 160, lx: 2.3, ly: -12, la: 500, fov: 46 },
-      { t: 6.5, x: 3.2, y: -19.6, a: 560, lx: 2.0, ly: -11, la: 700, fov: 44 },
+      { t: 0, x: 3.5, y: -20.6, a: 650, lx: 2.4, ly: -13.5, la: -300, fov: 46 },
+      { t: 6.5, x: 3.45, y: -19.9, a: 1050, lx: 2.2, ly: -12.5, la: -200, fov: 46 },
     ], { ease: ease.sine, shake: 6 }); },
     sim: t => 900 + t * 10,
     draw(t) {
@@ -237,8 +237,8 @@
     dur: 4.0, ...E2,
     mk() { const tr = lavaFront(); LF = tr[tr.length - 1] || { x: 2, y: -3.4 };
       return drone([
-        { t: 0, x: 2.9, y: -1.2, a: 650, lx: 1.2, ly: -1.9, la: 0, fov: 40 },
-        { t: 4.0, x: 3.5, y: -2.6, a: 650, lx: 1.8, ly: -3.0, la: 0, fov: 40 },
+        { t: 0, x: 4.4, y: -1.0, a: 1100, lx: 1.3, ly: -2.2, la: 0, fov: 40 },
+        { t: 4.0, x: 4.9, y: -2.7, a: 1000, lx: 1.8, ly: -3.0, la: 0, fov: 40 },
       ], { ease: ease.lin, shake: 6 }); },
     sim: t => 1200 + t * 2400, rate: () => 2400,
     draw(t) {
@@ -252,8 +252,8 @@
     dur: 3.6, ...E2,
     mk() { const tr = lavaFront(), f = tr[tr.length - 1] || { x: 2, y: -3.4 };
       return drone([
-        { t: 0, x: f.x + 1.3, y: f.y - 1.6, a: 260, lx: f.x - 0.4, ly: f.y + 0.9, la: 0, fov: 42 },
-        { t: 3.6, x: f.x + 0.8, y: f.y - 1.0, a: 200, lx: f.x - 0.6, ly: f.y + 1.2, la: 0, fov: 42 },
+        { t: 0, x: f.x + 2.6, y: f.y - 2.4, a: 950, lx: f.x - 0.2, ly: f.y + 0.6, la: 0, fov: 42 },
+        { t: 3.6, x: f.x + 2.0, y: f.y - 1.8, a: 800, lx: f.x - 0.3, ly: f.y + 0.8, la: 0, fov: 42 },
       ], { ease: ease.sine, shake: 7 }); },
     sim: t => 10800 + t * 3000, rate: () => 3000,
     draw(t) {
@@ -270,8 +270,8 @@
   DIR.shot('e3_a', {
     dur: 5.5, look: { ...day, fogD: 1.1 }, warm: 4, glowSize: 0.55, haloK: 0.4,
     mk() { return drone([
-      { t: 0, x: 1.9, y: -7.0, a: 140, lx: 0.03, ly: 0, la: 1200, fov: 44 },
-      { t: 5.5, x: 1.3, y: -5.0, a: 900, lx: 0.2, ly: 0, la: 5200, fov: 44 },
+      { t: 0, x: 2.6, y: -8.6, a: 450, lx: 0.03, ly: 0, la: 1500, fov: 46 },
+      { t: 5.5, x: 2.2, y: -7.4, a: 1300, lx: 0.3, ly: 0, la: 3800, fov: 46 },
     ], { ease: ease.inOut, shake: 7 }); },
     sim: t => 1500 + t * 400, rate: () => 400,
     draw(t) {
@@ -304,7 +304,7 @@
       reveal('Ceniza acumulada', 66, 330, t, 0.3, 6.3, { size: 64, weight: 750, font: F.disp, color: C.acc2 });
       place('Melipeuco', MELI[0], MELI[1], t, 0.6, 6.3, { size: 54 });
       const sA = meliS();
-      big(t, 1.2, 6.3, fmtMM(sA.ash || 0), 'de ceniza en Melipeuco', 1500, { size: 190 });
+      big(t, 1.2, 6.3, fmtMM(sA.ash || 0), 'de ceniza en Melipeuco', 1660, { size: 190 });
       fadeOut(t, 6.5, 0.3);
     },
   });
@@ -463,18 +463,18 @@
   DIR.shot('z_end', {
     dur: 7.5, hour: 20.2, look: { sky: 'dusk', fog: '#c4957c', fogD: 0.85, exp: 1.3 },
     mk() { return drone([
-      { t: 0, x: 3.3, y: -18.6, a: 180, lx: 0.03, ly: 0, la: 300, fov: 42 },
-      { t: 7.5, x: 3.7, y: -22.0, a: 950, lx: 0.03, ly: 0, la: 300, fov: 38 },
+      { t: 0, x: 3.3, y: -18.6, a: 250, lx: 0.03, ly: 0, la: -3600, fov: 44 },
+      { t: 7.5, x: 3.7, y: -22.0, a: 1000, lx: 0.03, ly: 0, la: -3600, fov: 40 },
     ], { ease: ease.inOut, shake: 6 }); },
     sim: t => 2400 + t * 10,
     draw(t) {
       gradTop(0.5, 600); gradBot(0.9, 1200); vignette(0.9);
-      kicker('HOY EL LLAIMA ESTÁ EN CALMA', 70, 1130, t, 0.6, 7.3);
-      reveal('Conoce tu', 62, 1270, t, 1.0, 7.3, { size: 124, weight: 800, font: F.disp, track: -2 });
-      reveal('zona segura.', 58, 1400, t, 1.3, 7.3, { size: 124, weight: 800, font: F.disp, track: -2 });
+      kicker('HOY EL LLAIMA ESTÁ EN CALMA', 70, 1250, t, 0.6, 7.3);
+      reveal('Conoce tu', 62, 1390, t, 1.0, 7.3, { size: 124, weight: 800, font: F.disp, track: -2 });
+      reveal('zona segura.', 58, 1520, t, 1.3, 7.3, { size: 124, weight: 800, font: F.disp, track: -2 });
       const a = win(t, 2.6, 8, 0.8, 0.5);
-      txt('Simulación educativa · no reemplaza', 70, 1560, { size: 36, weight: 550, alpha: a * 0.85 });
-      txt('a SERNAGEOMIN ni a SENAPRED', 70, 1608, { size: 36, weight: 550, alpha: a * 0.85 });
+      txt('Simulación educativa · no reemplaza', 70, 1640, { size: 36, weight: 550, alpha: a * 0.85 });
+      txt('a SERNAGEOMIN ni a SENAPRED', 70, 1688, { size: 36, weight: 550, alpha: a * 0.85 });
       fadeIn(t, 0.3); fadeOut(t, 7.5, 1.4);
     },
   });
