@@ -38,7 +38,7 @@ function encoder(file) {
   const todo = shots.filter(id => !fs.existsSync(path.join(ROOT, 'shots', id, 'done')) || preview);
   if (!todo.length) { log('nada pendiente'); srv.close(); return; }
   const W = S.W || OUTW, H = S.H || OUTH;
-  const { browser, page } = await openSession({ W, H, esc: S.scen ? SCEN[S.scen].esc : S.esc, q: 2, m: S.m || 2, extra: S.extra || '', log });
+  const { browser, page } = await openSession({ W, H, esc: S.scen ? SCEN[S.scen].esc : S.esc, q: 2, m: S.m || 1, extra: S.extra || '', log });
   await page.addScriptTag({ path: path.join(__dirname, 'gfx.js') });
   await page.evaluate(async () => { window.VCAT = (await import('/src/config.js')).CATALOG; });
   const dfile = path.join(ROOT, 'vdata.json'); if (fs.existsSync(dfile)) await page.evaluate(d => { window.VDATA = d; }, JSON.parse(fs.readFileSync(dfile, 'utf8')));

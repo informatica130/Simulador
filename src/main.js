@@ -739,6 +739,7 @@ function fxWarm(sec) {
 let drT = 0;
 let slowN = 0;
 function dynRes(now) {
+  if (window.__REC) return; // grabación cuadro a cuadro: calidad fija, sin ajustes automáticos
   if (now - drT < 1500) return; drT = now;
   if (fpsS < 18 && !S.lite) { if (++slowN >= 3) { S.lite = true; S.show.trees = false; forest.visible = false; bloom.enabled = false; fx.density = 0.45; S.prMax = 0.85;
     toast('Tu equipo va lento: activé el modo liviano (sin bosque 3D ni resplandor). Puedes cambiar la calidad en el panel derecho.'); } } else slowN = 0;
@@ -789,6 +790,7 @@ function frame(now) {
   if (S.show.fx) {
     const P = st && st.MER > 50 ? src.plume(st.MER) : null;
     const visSpeed = clamp(S.playing ? Math.sqrt(Math.max(1, S.speed)) * 0.5 : 1, 0.5, 5);
+    fx.night = NIGHT;
     fx.update(dtr * visSpeed, { src: st, plume: P, vents: src.vents, wind: src.wind, phreatic: S.scen === 'freatica', fumarole: st && st.active ? 2.5 : 1, fum: fumState() });
     fx.write(camera, S.ex);
   }

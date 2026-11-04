@@ -15,14 +15,20 @@ const SPARK = 0, BOMB = 1, FLAME = 2, EMBER = 3;
 
 const PVS = /* glsl */`
 precision highp float;
-attribute vec3 iPos; attribute vec4 iCol; attribute vec2 iSR; attribute float iGlow; attribute vec2 iMisc;
+attribute vec3 iPos; attribute vec4 iCol; attribute vec2 iSR; attribute float iGlow; attribute vec2 iMisc; attribute vec3 iVel; uniform float uStreak;
 varying vec2 vUv; varying vec4 vCol; varying float vGlow; varying vec3 vWp; varying float vSeed; varying float vAge; varying float vShade; varying vec3 vView;
 void main(){
   vUv = position.xy * 0.5 + 0.5; vCol = iCol; vGlow = iGlow; vWp = iPos; vSeed = iSR.y; vAge = iMisc.x; vShade = iMisc.y;
   vec4 mv = modelViewMatrix * vec4(iPos, 1.0); vView = mv.xyz;
   float c = cos(iSR.y * 6.283), s = sin(iSR.y * 6.283);
   vec2 q = mat2(c, -s, s, c) * position.xy;
-  mv.xy += q * iSR.x;
+  if (uStreak > 0.0) {
+    // estela de movimiento: el sprite se alarga en la dirección de la velocidad proyectada
+    vec2 vv = (modelViewMatrix * vec4(iVel, 0.0)).xy; float L = length(vv) * uStreak;
+    vec2 ax = L > 1e-6 ? vv / length(vv) : vec2(1.0, 0.0);
+    q = ax * position.x * (iSR.x + L) + vec2(-ax.y, ax.x) * position.y * iSR.x;
+    mv.xy += q;
+  } else mv.xy += q * iSR.x;
   gl_Position = projectionMatrix * mv;
 }`;
 const SMOKE_FS = /* glsl */`
@@ -49,9 +55,9 @@ void main(){
     float v = 1.0 - length(p - c) / rad;
     if (v > best) { best = v; cb = c; rb = rad; }
   }
-  float base = smoothstep(0.0, 0.3, best + (n - 0.5) * 0.35);
+  float base = smoothstep(0.0, 0.42, best + (n - 0.5) * 0.6);
   float er = mix(0.05, 0.45, vAge * vAge);
-  float dens = smoothstep(er, er + 0.22, base * (0.55 + 0.9 * n) - 0.08);
+  float dens = smoothstep(er, er + 0.34, base * (0.5 + 1.0 * n) - 0.06) * smoothstep(1.0, 0.7, r);
   if (dens < 0.01) discard;
   vec2 lp = (p - cb) / rb;
   vec3 nrm = normalize(vec3(lp * 0.9 + (w - 0.5) * 0.8, sqrt(max(0.0, 1.0 - dot(lp, lp))) + 0.15));
@@ -68,11 +74,11 @@ void main(){
 }`;
 const GLOW_FS = /* glsl */`
 precision highp float;
-varying vec2 vUv; varying vec4 vCol; varying float vGlow; varying vec3 vWp; varying float vSeed;
+varying vec2 vUv; varying vec4 vCol; varying float vGlow; varying vec3 vWp; varying float vSeed; uniform float uNight;
 void main(){
   vec2 p = vUv * 2.0 - 1.0; float r = dot(p, p);
   if (r > 1.0) discard;
-  float a = (exp(-r * 5.0) + 0.25 * exp(-r * 1.4)) * (1.0 - smoothstep(0.6, 1.0, r));
+  float a = (exp(-r * mix(9.0, 5.0, uNight)) + mix(0.04, 0.22, uNight) * exp(-r * 1.4)) * (1.0 - smoothstep(0.6, 1.0, r)) * mix(0.55, 1.0, uNight);
   gl_FragColor = vec4(vCol.rgb * vGlow * a, 1.0);
 }`;
 
@@ -90,9 +96,10 @@ class Pool {
     this.aSR = new THREE.InstancedBufferAttribute(new Float32Array(n * 2), 2).setUsage(THREE.DynamicDrawUsage);
     this.aGlow = new THREE.InstancedBufferAttribute(new Float32Array(n), 1).setUsage(THREE.DynamicDrawUsage);
     this.aMisc = new THREE.InstancedBufferAttribute(new Float32Array(n * 2), 2).setUsage(THREE.DynamicDrawUsage);
-    g.setAttribute('iPos', this.aPos); g.setAttribute('iCol', this.aCol); g.setAttribute('iSR', this.aSR); g.setAttribute('iGlow', this.aGlow); g.setAttribute('iMisc', this.aMisc);
+    this.aVel = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage);
+    g.setAttribute('iPos', this.aPos); g.setAttribute('iCol', this.aCol); g.setAttribute('iSR', this.aSR); g.setAttribute('iGlow', this.aGlow); g.setAttribute('iMisc', this.aMisc); g.setAttribute('iVel', this.aVel);
     g.instanceCount = 0;
-    this.uniforms = { uSunV: { value: new THREE.Vector3(0, 0, 1) }, uSunCol: { value: new THREE.Color() }, uSkyCol: { value: new THREE.Color() }, uFogCol: { value: new THREE.Color() }, uFogD: { value: 0.006 }, uCamPos: { value: new THREE.Vector3() }, uAshHaze: { value: 0 }, uTime: { value: 0 } };
+    this.uniforms = { uSunV: { value: new THREE.Vector3(0, 0, 1) }, uSunCol: { value: new THREE.Color() }, uSkyCol: { value: new THREE.Color() }, uFogCol: { value: new THREE.Color() }, uFogD: { value: 0.006 }, uCamPos: { value: new THREE.Vector3() }, uAshHaze: { value: 0 }, uTime: { value: 0 }, uStreak: { value: 0 }, uNight: { value: 1 } };
     this.mat = new THREE.ShaderMaterial({ vertexShader: PVS, fragmentShader: fs, uniforms: this.uniforms, transparent: true, depthWrite: false, blending });
     this.mesh = new THREE.Mesh(g, this.mat); this.mesh.frustumCulled = false; this.g = g;
     scene.add(this.mesh);
@@ -119,7 +126,7 @@ export class FX {
     this.hAt = hAt; // altura del terreno en (x km, y km) → m
     this.smoke = new Pool(14000, SMOKE_FS, THREE.NormalBlending, scene);
     this.glow = new Pool(8000, GLOW_FS, THREE.AdditiveBlending, scene);
-    this.smoke.mesh.renderOrder = 5; this.glow.mesh.renderOrder = 6;
+    this.smoke.mesh.renderOrder = 5; this.glow.mesh.renderOrder = 6; this.glow.uniforms.uStreak.value = 0.045; this.night = 1;
     this.ex = 1.5; this.acc = {}; this.events = [];
     // rayos
     this.boltGeo = new THREE.BufferGeometry(); this.boltPos = new Float32Array(600 * 3);
@@ -148,7 +155,7 @@ export class FX {
     // ---------------- columna eruptiva
     if (s.MER > 50 && P) {
       const lg = Math.log10(s.MER);
-      let n = emit('plume', 30 + 26 * (lg - 2));
+      let n = emit('plume', (30 + 26 * (lg - 2)) * 1.5);
       const steamy = ctx.phreatic ? 1 : 0;
       for (let k = 0; k < n; k++) {
         const v = vents[(rnd() * vents.length) | 0] || v0;
@@ -156,7 +163,7 @@ export class FX {
         const up = P.U0 * (0.6 + 0.4 * rnd());
         const tone = 0.9 + 0.2 * rnd();
         const c = steamy ? [0.80, 0.80, 0.82] : [0.26 * tone, 0.225 * tone, 0.19 * tone];
-        this.smoke.add(v.x * 1000 + Math.cos(a) * r, v.y * 1000 + Math.sin(a) * r, this.hAt(v.x, v.y) + 30, (rnd() - 0.5) * 30, (rnd() - 0.5) * 30, up, 320 + 520 * rnd(), Math.max(90, P.b0 * 2.6), 520, SMOKE, c[0], c[1], c[2], 0.92, 0);
+        this.smoke.add(v.x * 1000 + Math.cos(a) * r, v.y * 1000 + Math.sin(a) * r, this.hAt(v.x, v.y) + 30, (rnd() - 0.5) * 30, (rnd() - 0.5) * 30, up, 320 + 520 * rnd(), Math.max(70, P.b0 * 2.1), 430, SMOKE, c[0], c[1], c[2], 0.92, 0);
       }
       // lluvia de ceniza bajo la nube paraguas
       n = emit('ashf', Math.max(0, 4 * (lg - 4)));
@@ -177,7 +184,7 @@ export class FX {
       const n = emit('fount', 120 + s.fountain * 0.5);
       // halo incandescente sobre la boca
       const nh = emit('halo', 3);
-      for (let k = 0; k < nh; k++) this.glow.add(vx0 + (rnd() - 0.5) * 80, vy0 + (rnd() - 0.5) * 80, vz0 + s.fountain * (0.2 + 0.4 * rnd()), 0, 0, 2, 2.5, s.fountain * (0.7 + 0.5 * rnd()), s.fountain * 1.1, FLAME, 1, 0.42, 0.12, 1, 0.22);
+      for (let k = 0; k < nh; k++) this.glow.add(vx0 + (rnd() - 0.5) * 80, vy0 + (rnd() - 0.5) * 80, vz0 + s.fountain * (0.2 + 0.4 * rnd()), 0, 0, 2, 2.5, s.fountain * (0.5 + 0.4 * rnd()), s.fountain * 0.8, FLAME, 1, 0.42, 0.12, 1, 0.1);
       for (let k = 0; k < n; k++) {
         const v = vents[(rnd() * vents.length) | 0] || v0;
         const th = (1 - Math.pow(rnd(), 2)) * 0.25, a = rnd() * 6.283, sp = vF * (0.55 + 0.5 * rnd());
@@ -300,7 +307,7 @@ export class FX {
           tvx += dx / rr * pull + (Math.random() - 0.5) * pl.U * 0.6; tvy += dy / rr * pull + (Math.random() - 0.5) * pl.U * 0.6;
           const k = Math.min(1, dt * 1.6);
           vx += (tvx - vx) * k; vy += (tvy - vy) * k; vz += (tvz - vz) * k;
-          S.s1[i] = Math.min(Math.max(S.s1[i], pl.b * 1.25 + 120), 1150);
+          S.s1[i] = Math.min(Math.max(S.s1[i], pl.b * 1.05 + 100), 950);
           // autosombra: el lado de la columna que mira al sol queda más iluminado
           const sw = this.sunW; S.shade[i] = 0.45 + 0.55 * Math.max(-1, Math.min(1, (dx * sw[0] + dy * sw[1]) / rr * 1.4 + sw[2] * 0.3));
           const hf = Math.max(0, Math.min(1, (z - this.zVent) / Math.max(1500, P.Ht - this.zVent)));
@@ -409,16 +416,18 @@ export class FX {
         }
         C[q * 4] = pool.col[i * 4]; C[q * 4 + 1] = pool.col[i * 4 + 1]; C[q * 4 + 2] = pool.col[i * 4 + 2]; C[q * 4 + 3] = a;
         SR[q * 2] = size; SR[q * 2 + 1] = pool.seed[i];
-        G[q] = sort ? (t === SMOKE ? (this.ventGlow || 0) * Math.exp(-Math.max(0, pool.p[i * 3 + 2] - (this.zVent || 0)) / 900) : pool.glow[i] * Math.max(0, 1 - pool.age[i] / 25)) : pool.glow[i] * (1 - f * 0.5);
+        G[q] = sort ? (t === SMOKE ? (this.ventGlow || 0) * (0.1 + 0.9 * this.night) * Math.exp(-Math.max(0, pool.p[i * 3 + 2] - (this.zVent || 0)) / 900) : pool.glow[i] * Math.max(0, 1 - pool.age[i] / 25)) : pool.glow[i] * (1 - f * 0.5);
         pool.aMisc.array[q * 2] = f; pool.aMisc.array[q * 2 + 1] = pool.shade[i];
+        if (!sort) { const V = pool.aVel.array; V[q * 3] = pool.v[o] / 1000; V[q * 3 + 1] = pool.v[o + 2] / 1000 * ex; V[q * 3 + 2] = -pool.v[o + 1] / 1000; }
       }
       pool.g.instanceCount = n;
-      pool.aPos.needsUpdate = pool.aCol.needsUpdate = pool.aSR.needsUpdate = pool.aGlow.needsUpdate = pool.aMisc.needsUpdate = true;
-      for (const [a, k] of [[pool.aPos, 3], [pool.aCol, 4], [pool.aSR, 2], [pool.aGlow, 1], [pool.aMisc, 2]]) { a.clearUpdateRanges(); a.addUpdateRange(0, Math.max(1, n * k)); }
+      pool.aPos.needsUpdate = pool.aCol.needsUpdate = pool.aSR.needsUpdate = pool.aGlow.needsUpdate = pool.aMisc.needsUpdate = pool.aVel.needsUpdate = true;
+      for (const [a, k] of [[pool.aPos, 3], [pool.aCol, 4], [pool.aSR, 2], [pool.aGlow, 1], [pool.aMisc, 2], [pool.aVel, 3]]) { a.clearUpdateRanges(); a.addUpdateRange(0, Math.max(1, n * k)); }
     }
   }
   setLighting(sunV, sunCol, skyCol, fogCol, fogD, camPos, sunW, time) {
     if (sunW) this.sunW = [sunW.x, -sunW.z, sunW.y];
+    this.glow.uniforms.uNight.value = this.night ?? 1;
     for (const p of [this.smoke, this.glow]) { const u = p.uniforms; u.uTime.value = time || 0; u.uSunV.value.copy(sunV); u.uSunCol.value.copy(sunCol); u.uSkyCol.value.copy(skyCol); u.uFogCol.value.copy(fogCol); u.uFogD.value = fogD; u.uCamPos.value.copy(camPos); }
   }
   clear() { this.smoke.count = 0; this.glow.count = 0; this.acc = {}; }

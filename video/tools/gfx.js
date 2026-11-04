@@ -53,10 +53,54 @@
     return o;
   }
   function applyCam(k) {
-    const A = APP, { T, P } = camPose(k);
-    A.controls.target.set(...T); A.camera.position.set(...P);
-    if (k.fov && Math.abs(A.camera.fov - k.fov) > 1e-3) { A.camera.fov = k.fov; A.camera.updateProjectionMatrix(); }
-    A.camera.lookAt(...T);
+    const A = APP, cam = A.camera;
+    let T, P;
+    if (k.P) { P = k.P; T = k.L; } else ({ T, P } = camPose(k));
+    A.controls.target.set(...T); cam.position.set(...P);
+    if (k.fov && Math.abs(cam.fov - k.fov) > 1e-3) { cam.fov = k.fov; cam.updateProjectionMatrix(); }
+    cam.up.set(0, 1, 0); cam.lookAt(...T);
+    if (k.roll) cam.rotateZ(k.roll * Math.PI / 180);
+  }
+
+  // ------------------------------------------------------------ dron: trayectorias libres con deriva y alabeo
+  // claves: {t, x, y, a (m sobre el suelo) | z (m s.n.m.), lx, ly, la | lz, fov}
+  const W3 = (x, y, z) => [x, z / 1000 * APP.S.ex, -y];
+  const crs = (p0, p1, p2, p3, s) => 0.5 * ((2 * p1) + (-p0 + p2) * s + (2 * p0 - 5 * p1 + 4 * p2 - p3) * s * s + (-p0 + 3 * p1 - 3 * p2 + p3) * s * s * s);
+  function droneRaw(keys, u) {
+    let i = 0; while (i < keys.length - 2 && u > keys[i + 1].t) i++;
+    const a = keys[Math.max(0, i - 1)], b = keys[i], c = keys[Math.min(keys.length - 1, i + 1)], d = keys[Math.min(keys.length - 1, i + 2)];
+    const f = c === b ? 0 : clamp((u - b.t) / (c.t - b.t));
+    const o = {};
+    for (const key of ['x', 'y', 'Z', 'lx', 'ly', 'LZ', 'fov']) o[key] = crs(a[key], b[key], c[key], d[key], f);
+    return o;
+  }
+  function drone(keys0, opt = {}) {
+    const A = APP, e = opt.ease || ease.sine, shake = opt.shake ?? 6, bank = opt.bank ?? 1;
+    // altitudes absolutas (la altura sobre el suelo se resuelve una vez, en cada clave)
+    const keys = keys0.map(k => ({ t: k.t, x: k.x, y: k.y, Z: k.z != null ? k.z : A.hAt(k.x, k.y) + (k.a ?? 300),
+      lx: k.lx, ly: k.ly, LZ: k.lz != null ? k.lz : A.hAt(k.lx, k.ly) + (k.la ?? 0), fov: k.fov ?? 40 }));
+    const t0 = keys[0].t, t1 = keys[keys.length - 1].t;
+    const at = t => droneRaw(keys, t0 + e((t - t0) / (t1 - t0)) * (t1 - t0));
+    const seed = opt.seed ?? 1.7;
+    const nz = (t, k) => Math.sin(t * 0.61 + k * 3.1 + seed) * 0.5 + Math.sin(t * 1.37 + k * 1.7 + seed * 2) * 0.3 + Math.sin(t * 2.9 + k * 5.3) * 0.2;
+    return t => {
+      const o = at(t), h = 1 / 24, p = at(t - h), q = at(t + h);
+      // alabeo por aceleración lateral (como un dron que gira)
+      const vx = (q.x - p.x) / (2 * h), vy = (q.y - p.y) / (2 * h), ax = (q.x - 2 * o.x + p.x) / (h * h), ay = (q.y - 2 * o.y + p.y) / (h * h);
+      const sp = Math.hypot(vx, vy) + 1e-6, lat = (vx * ay - vy * ax) / sp;
+      const roll = clamp(-lat * 18 * bank, -7, 7) + nz(t, 9) * 0.35 * (shake / 6);
+      const sk = shake / 1000;
+      let x = o.x + nz(t, 1) * sk, y = o.y + nz(t, 2) * sk, Z = o.Z + nz(t, 3) * shake;
+      Z = Math.max(Z, A.hAt(x, y) + (opt.clear ?? 45));
+      const lx = o.lx + nz(t, 4) * sk * 0.6, ly = o.ly + nz(t, 5) * sk * 0.6, LZ = o.LZ + nz(t, 6) * shake * 0.6;
+      return { P: W3(x, y, Z), L: W3(lx, ly, LZ), fov: o.fov, roll };
+    };
+  }
+  // recorrido a lo largo de una ruta [[x,y],...]: s (0..1) → punto suavizado
+  function pathAt(path, s) {
+    let L = 0; const seg = []; for (let i = 1; i < path.length; i++) { const d = Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]); seg.push(d); L += d; }
+    let tg = clamp(s) * L; for (let i = 1; i < path.length; i++) { if (tg <= seg[i - 1] || i === path.length - 1) { const k = clamp(tg / seg[i - 1]); return [lerp(path[i - 1][0], path[i][0], k), lerp(path[i - 1][1], path[i][1], k)]; } tg -= seg[i - 1]; }
+    return path[path.length - 1];
   }
   // proyección de un punto del terreno (x, y km; dz m sobre el suelo) a píxeles
   const _v = { x: 0, y: 0, z: 0 };
@@ -169,10 +213,10 @@
     const a = win(t, t0, t1, 0.8, 0.6); if (a <= 0) return;
     const y = o.y ?? H() * 0.70, x = 72;
     const k = ease.outQ((t - t0) / 0.9);
-    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = o.color || C.acc; ctx.fillRect(x, y - 150, 90 * k, 5); ctx.restore();
-    reveal(num, x, y - 100, t, t0 + 0.05, t1, { size: 28, weight: 650, track: 6, color: o.color || C.acc, font: F.ui });
+    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = o.color || C.acc; ctx.fillRect(x, y - 186, 110 * k, 7); ctx.restore();
+    reveal(num, x, y - 120, t, t0 + 0.05, t1, { size: 44, weight: 750, track: 5, color: o.color || C.acc, font: F.ui });
     reveal(title, x - 4, y, t, t0 + 0.15, t1, { size: o.size || 104, weight: 800, font: F.disp, track: -1 });
-    if (sub) reveal(sub, x, y + 64, t, t0 + 0.3, t1, { size: 36, weight: 500, color: C.tx2, font: F.ui });
+    if (sub) reveal(sub, x, y + 70, t, t0 + 0.3, t1, { size: 48, weight: 600, color: C.tx, font: F.ui });
   }
   // cifra grande con etiqueta (data card)
   function stat(t, t0, t1, x, y, value, unit, label, o = {}) {
@@ -184,7 +228,7 @@
     if (label) txt(label, o.align === 'center' ? x : x + 4, y + 60, { size: o.lsize || 32, weight: 500, alpha: a * 0.8, color: C.tx2, align: o.align, track: 0.5 });
   }
 
-  window.DIR = { clamp, lerp, ss, ease, win, C, F, camPose, camAt, applyCam, proj, setCtx, txt, measure, reveal, rrect, glass, line, partial, pin, groundPath, vignette, gradTop, gradBot, shade, hud, chapter, stat, bg: null, get ctx() { return ctx; } };
+  window.DIR = { clamp, lerp, ss, ease, win, C, F, camPose, camAt, applyCam, drone, pathAt, proj, setCtx, txt, measure, reveal, rrect, glass, line, partial, pin, groundPath, vignette, gradTop, gradBot, shade, hud, chapter, stat, bg: null, get ctx() { return ctx; } };
 
   // ------------------------------------------------------------ «look» por toma: cielo en degradado, niebla, exposición
   const SKIES = {
