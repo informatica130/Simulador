@@ -21,7 +21,7 @@
     const c = DIR.ctx, x = W - 64, y = 150;
     if (o.rec !== false) { const blink = 0.55 + 0.45 * Math.cos(t * 4); c.save(); c.globalAlpha = a * blink; c.fillStyle = C.red; c.beginPath(); c.arc(x - measure(str, { size: 58, weight: 700, font: F.mono }) - 30, y - 19, 11, 0, 7); c.fill(); c.restore(); }
     txt(str, x, y, { size: 58, weight: 700, font: F.mono, align: 'right', alpha: a });
-    txt(o.label || 'HORAS DESDE EL INICIO', x, y + 46, { size: 26, weight: 650, align: 'right', track: 3, alpha: a * 0.75 });
+    txt(o.label || 'HORAS DESDE EL INICIO', x, y + 48, { size: 30, weight: 650, align: 'right', track: 3, alpha: a * 0.75 });
   }
   // cifra protagonista sin tarjeta
   function big(t, t0, t1, value, label, y, o = {}) {
@@ -313,8 +313,8 @@
   DIR.shot('e4_a', {
     dur: 4.6, look: { ...day, fogD: 1.1 }, warm: 4,
     mk() { return drone([
-      { t: 0, x: 1.9, y: -7.6, a: 110, lx: 0.03, ly: 0, la: 1600, fov: 46 },
-      { t: 4.6, x: 1.0, y: -4.4, a: 260, lx: 0.03, ly: 0, la: 2600, fov: 46 },
+      { t: 0, x: 2.2, y: -6.8, a: 520, lx: 0.03, ly: 0, la: 1500, fov: 46 },
+      { t: 4.6, x: 1.3, y: -4.2, a: 700, lx: 0.03, ly: 0, la: 2300, fov: 46 },
     ], { ease: ease.inOut, shake: 9, bank: 1.4 }); },
     sim: t => 300 + t * 160, rate: () => 160,
     draw(t) {
@@ -327,8 +327,8 @@
   DIR.shot('e4_b', {
     dur: 4.8, look: { ...day, fogD: 1.1 }, warm: 4,
     mk() { return drone([
-      { t: 0, x: 2.6, y: -4.2, z: 3300, lx: 0.1, ly: -0.1, lz: 5200, fov: 44 },
-      { t: 4.8, x: 2.9, y: -4.8, z: 6800, lx: 0.4, ly: -0.1, lz: 13500, fov: 44 },
+      { t: 0, x: 3.9, y: -6.3, z: 3100, lx: 0.1, ly: -0.1, lz: 4600, fov: 46 },
+      { t: 4.8, x: 4.6, y: -7.4, z: 5000, lx: 0.3, ly: -0.1, lz: 8200, fov: 46 },
     ], { ease: ease.inOut, shake: 6 }); },
     sim: t => 1040 + t * 100, rate: () => 100,
     draw(t) {
@@ -343,7 +343,7 @@
     mk() { return orbit(0.5, -0.8, 8.5, 158, 192, 3300, 6.5, { lx: 0.6, ly: -1.4, la: 500 }, { ease: ease.lin, fov: 42, shake: 7 }); },
     sim: t => 1500 + t * 220, rate: () => 220,
     draw(t) {
-      gradTop(0.4, 480); gradBot(0.85, 900); vignette(0.8);
+      gradTop(0.4, 480); gradBot(1.0, 1150); vignette(0.8);
       big(t, 0.6, 6.3, '+100 km/h', 'flujos piroclásticos', 1500, { size: 170, kick: 'LA COLUMNA COLAPSA', color: C.red });
       clock(t, 1500 + t * 220);
     },
@@ -372,7 +372,7 @@
   DIR.shot('e4_lah_a', {
     dur: 4.6, look: day, warm: 3, roads: true,
     mk() { tBr = (M().g.truful || {}).arr > 0 ? M().g.truful.arr : 10021;
-      return chase(t => lerp(6200, tBr - 700, t / 4.6), { back: t => lerp(1.6, 1.1, t / 4.6), alt: t => lerp(520, 330, t / 4.6), ahead: 1.6, fov: 46 }); },
+      return chase(t => lerp(6200, tBr - 700, t / 4.6), { back: t => lerp(1.0, 0.75, t / 4.6), alt: t => lerp(360, 260, t / 4.6), ahead: 0.35, fov: 46 }); },
     sim: t => lerp(6200, tBr - 700, t / 4.6), rate: () => (tBr - 700 - 6200) / 4.6,
     draw(t) {
       gradTop(0.4, 480); gradBot(0.85, 900); vignette(0.75);

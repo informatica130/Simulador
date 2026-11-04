@@ -54,6 +54,7 @@ function encoder(file) {
     const n = await page.evaluate(id => DIR.setup(id), id);
     log(`toma ${id}: ${n} cuadros (${(n / FPS).toFixed(1)} s)`);
     if (preview) {
+      for (const f of fs.readdirSync(dir)) if (f.startsWith('prev_')) fs.unlinkSync(path.join(dir, f));
       const picks = [0, Math.floor(n * 0.33), Math.floor(n * 0.66), n - 1];
       for (const f of picks) {
         const url = await page.evaluate(f => DIR.frame(f, true), Math.min(f, n - 1));
