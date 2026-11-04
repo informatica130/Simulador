@@ -1,5 +1,5 @@
 #!/bin/bash
-# Espera a que termine la grabación en curso y lanza la cola indicada
+# Espera a que termine la cola en curso y luego graba las sesiones pedidas
 cd "$(dirname "$0")"
-while pgrep -f "node render.js" >/dev/null; do sleep 20; done
+while pgrep -f "queue.sh" | grep -qv "^$$\$"; do sleep 30; done
 exec ./queue.sh "$@"

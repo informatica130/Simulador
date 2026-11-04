@@ -3,7 +3,7 @@
 cd "$(dirname "$0")"
 pgrep -f "http.server 8000" >/dev/null || (cd ../.. && setsid nohup python3 -m http.server 8000 >/dev/null 2>&1 &)
 EXP="${EXP:-pliniana e2008 e1640 e1751}"
-REN="${REN:-pliniana e2008 pliniana_lo reposo reposo_lo}"
+REN="${REN:-pliniana e2008 pliniana_lo reposo reposo_lo e1640 e1751}"
 if ! pgrep -f "explore.js" >/dev/null; then
   setsid nohup bash -c "for s in $EXP; do node explore.js \$s >> ../work/explore_out.log 2>&1; done; echo \"\$(date +%T) exploración terminada\" >> ../work/render.log" >/dev/null 2>&1 &
 fi
