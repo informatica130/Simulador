@@ -100,7 +100,7 @@ const TERRAIN_FS = /* glsl */`
 precision highp float; precision highp int; precision highp sampler2D;
 uniform sampler2D tSat, tSatHi, tH30, tDet, tHf, tShadow; uniform ivec2 uN30; uniform vec4 uGrid; uniform vec4 uSatB; uniform vec4 uHiB; uniform float uHiOn;
 uniform float uEx; uniform int uBase; uniform int uOverlay; uniform float uAccCount; uniform float uSimT;
-uniform float uShadows; uniform float uContours; uniform float uSnowVis; uniform float uNight; uniform float uZone;
+uniform float uShadows; uniform float uContours; uniform float uSnowVis; uniform float uNight; uniform float uZone; uniform float uWet;
 varying vec3 vW; varying vec2 vXY; varying float vZ; varying vec2 vDG; varying vec3 vNv;
 varying vec4 vA; varying vec4 vB; varying vec4 vC; varying vec4 vD; varying float vIce;
 ` + COMMON_GLSL + /* glsl */`
@@ -223,6 +223,12 @@ void main(){
   // luz del cielo con oclusión y luz rebotada del terreno
   vec3 col = alb * (uSunCol * ndl * sh + uSkyCol * (0.55 + 0.45 * N.y) * ao + uGroundCol * (0.5 - 0.5 * N.y));
   vec3 H = normalize(L + V);
+  // suelo mojado por la lluvia: más oscuro y con brillo especular (charcos en lo plano)
+  if (uWet > 0.0 && water < 0.5) {
+    float flat_ = smoothstep(12.0, 3.0, slopeDeg) * smoothstep(0.45, 0.7, n1);
+    col *= 1.0 - 0.32 * uWet * (1.0 - smoothstep(0.1, 0.5, swe));
+    col += (uSkyCol * 0.5 + uSunCol * 0.3) * pow(max(dot(N, H), 0.0), 40.0 + 200.0 * flat_) * uWet * (0.15 + 0.6 * flat_) * sh;
+  }
   float icy = smoothstep(0.1, 1.0, swe) * (uSnowVis > 0.5 ? 1.0 : 0.0);
   col += uSunCol * pow(max(dot(N, H), 0.0), 60.0) * 0.18 * icy * sh;
   col += alb * glowLight(vW, N);
@@ -524,7 +530,7 @@ export function createTerrain(D, solver, satTex, opts = {}) {
     uS: { value: solver.s }, uSimN: { value: new THREE.Vector2(solver.nx, solver.ny) }, uN30: { value: new THREE.Vector2(D.nx30, D.ny30) }, uStep: { value: step },
     uAccN: { value: new THREE.Vector2(1, 1) }, uAccS: { value: 1 }, uProbCh: { value: 0 }, uAccCount: { value: 0 },
     uGrid: { value: new THREE.Vector4(GR.X0, GR.Y1, GR.cell, D.cell30) }, uSatB: { value: new THREE.Vector4(GR.bx0, GR.bx1, GR.by0, GR.by1) },
-    uBase: { value: 0 }, uOverlay: { value: 0 }, uZone: { value: 1 }, uSimT: { value: 0 }, uShadows: { value: 1 }, uContours: { value: 0 }, uSnowVis: { value: 1 },
+    uBase: { value: 0 }, uOverlay: { value: 0 }, uZone: { value: 1 }, uWet: { value: 0 }, uSimT: { value: 0 }, uShadows: { value: 1 }, uContours: { value: 0 }, uSnowVis: { value: 1 },
   };
   const mat = new THREE.ShaderMaterial({ vertexShader: TERRAIN_VS, fragmentShader: TERRAIN_FS, uniforms: U, extensions: { derivatives: true } });
   const mesh = new THREE.Mesh(g, mat); mesh.frustumCulled = false;

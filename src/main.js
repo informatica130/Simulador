@@ -18,6 +18,7 @@ import { createOverlays, Labels } from './overlays.js';
 import { FX } from './fx.js';
 import { Forest } from './forest.js';
 import { Volumes, VolumePass } from './volume.js';
+import { RainPass, rainAt } from './weather.js';
 import { Ensemble, STYLES } from './ensemble.js';
 import { Sound } from './audio.js';
 import { lineChart, barChart, histChart, fmtT, fmtN } from './charts.js';
@@ -42,7 +43,7 @@ const setLoad = (t, f) => { $('loadtxt').textContent = t; if (f != null) $('lbar
 const fail = m => { $('loading').innerHTML = `<div><b>LLAIMA 3D</b><div class="err">${m}</div></div>`; };
 
 let D, geo, hAt, renderer, scene, camera, controls, composer, bloom, sky, stars;
-let vol, volPass, overScene, sol, run, terr, ovl, fx, labels, ens = null, src, forest, player, vsum = null;
+let rainPass, vol, volPass, overScene, sol, run, terr, ovl, fx, labels, ens = null, src, forest, player, vsum = null;
 const snd = new Sound();
 let gaugePts = [], allPts = [], idx = {}, sites = [];
 const series = { gauges: [] };
@@ -99,6 +100,7 @@ async function boot() {
   fx.density = S.lite ? 0.45 : 1;
   // nubes volumétricas (columna, paraguas, vapor) y escena que se dibuja encima (incandescencia, rayos)
   vol = new Volumes(D, terr); vol.setQuality(S.lite); fx.volumetric = true;
+  vol.U.uSim.value.set(D.GR.X0, D.GR.Y1, D.GR.cell, sol.s); vol.U.uSimN.value.set(sol.nx, sol.ny);
   overScene = new THREE.Scene(); for (const m of [fx.glow.mesh, fx.bolt]) { scene.remove(m); overScene.add(m); }
   labels = new Labels($('labels'), camera, hAt, () => S.ex);
   // post-proceso
@@ -108,6 +110,7 @@ async function boot() {
   composer.addPass(new RenderPass(scene, camera));
   volPass = new VolumePass(vol, camera, overScene); composer.addPass(volPass);
   bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), 0.6, 0.5, 2.4); composer.addPass(bloom); bloom.enabled = !S.lite;
+  rainPass = new RainPass(); composer.addPass(rainPass);
   composer.addPass(new OutputPass());
   setupPoints(); buildLabels(); buildUI(); setupInput();
   setLoad('Preparando la escena…', 0.92);
@@ -118,7 +121,7 @@ async function boot() {
   S.playing = true; $('play').textContent = '❚❚';
   toast('Simulación iniciada · arrastra para mover, botón derecho para rotar, rueda para acercar, clic para medir');
   last = performance.now(); requestAnimationFrame(frame);
-  window.APP = { get vol() { return vol; }, fronts: () => vsum && vsum.spots && vsum.spots.fronts, fxWarm, S, get forest() { return forest; }, get player() { return player; }, run, sol, src: () => src, camera, controls, goView, applyScenario, setOverlay, flyTo, readback, terr, fx };
+  window.APP = { get rainPass() { return rainPass; }, get vol() { return vol; }, fronts: () => vsum && vsum.spots && vsum.spots.fronts, fxWarm, S, get forest() { return forest; }, get player() { return player; }, run, sol, src: () => src, camera, controls, goView, applyScenario, setOverlay, flyTo, readback, terr, fx };
 }
 
 function makeStars() {
@@ -190,7 +193,7 @@ function applyScenario(key, fromPreset) {
   if (hadSnap !== sol.baseMonth) resnapGauges();
   fx.clear(); ovl.setVents(src.vents, S.ex);
   events = []; evFlags = {}; series.gauges = gaugePts.map(() => []); $('log').innerHTML = '';
-  histCache.clear(); if (vol) { vol.cur = null; vol.colDens = 0; }
+  histCache.clear(); WET = 0; if (vol) { vol.cur = null; vol.colDens = 0; }
   S.computing = true; S.playT = 0; S.lastRec = -1e9; csmp = null; vsum = null; player.t = -1;
   S.runTo = null; S.tEnd = Math.min(4 * 86400, src.tEnd + 3 * 3600);
   $('scenDesc').textContent = sc.desc;
@@ -217,7 +220,7 @@ function simDate(t) {
   return { ms, off };
 }
 const sunDir = new THREE.Vector3(), tmpC = new THREE.Color();
-let NIGHT = 0; const NIGHT_BG = new THREE.Color(0.004, 0.006, 0.012);
+let NIGHT = 0, WET = 0, RAIN = 0; const NIGHT_BG = new THREE.Color(0.004, 0.006, 0.012);
 function updateLighting() {
   const { ms, off } = simDate(S.playT);
   // «Siempre de día»: mantiene la fecha real pero fija la hora solar a media mañana para ver bien los flujos
@@ -228,6 +231,9 @@ function updateLighting() {
   sky.material.uniforms.sunPosition.value.copy(dir);
   const u = sky.material.uniforms; u.turbidity.value = 2.5; u.rayleigh.value = 1.8; u.mieCoefficient.value = 0.003; u.mieDirectionalG.value = 0.78;
   const day = ss(-7, 6, el); NIGHT = 1 - day;
+  // lluvia: cielo cubierto (menos sol directo, luz difusa gris, más bruma) y suelo mojado
+  const rv = rainAt(S.rain, S.rainS, S.playT), cc = Math.min(1, rv / 6);
+  WET = Math.max(WET * 0.9995, Math.min(1, rv / 3)); RAIN = rv;
   sunDir.set(dir.x, Math.max(dir.y, -0.2) * S.ex, dir.z).normalize();
   const sh = terr.shared;
   sh.uSunDir.value.copy(sunDir);
@@ -237,7 +243,15 @@ function updateLighting() {
   sh.uGroundCol.value.setRGB(0.06, 0.055, 0.045).multiplyScalar(day);
   const sunset = (1 - warm) * day;
   sh.uFogCol.value.setRGB(0.012 + 0.55 * day + 0.2 * sunset, 0.016 + 0.64 * day + 0.03 * sunset, 0.03 + 0.76 * day - 0.15 * sunset);
-  sh.uFogD.value = 0.0016 + 0.004 * NIGHT;
+  sh.uFogD.value = 0.0016 + 0.004 * NIGHT + 0.014 * cc;
+  if (cc > 0) {
+    sh.uSunCol.value.multiplyScalar(1 - 0.85 * cc);
+    const gsky = new THREE.Color(0.30, 0.31, 0.33).multiplyScalar(0.25 + 0.75 * day);
+    sh.uSkyCol.value.lerp(gsky, cc * 0.8);
+    sh.uFogCol.value.lerp(new THREE.Color(0.44, 0.46, 0.49).multiplyScalar(0.1 + 0.9 * day), cc * 0.85);
+    u.turbidity.value = 2.5 + 14 * cc; u.rayleigh.value = 1.8 * (1 - 0.7 * cc);
+  }
+  terr.U.uWet.value = WET;
   renderer.toneMappingExposure = 0.72 + 0.6 * NIGHT;
   stars.material.opacity = ss(0.5, 0.95, NIGHT) * 0.9;
   sky.visible = day > 0.02;
@@ -740,6 +754,13 @@ function plumeHist(t) {
   const h = { age: t - t0, off, mer, Ht: P.Ht, Hnb: P.Hnb, xTop: P.xTop };
   histCache.set(key, h); return h;
 }
+// extensión de las corrientes piroclásticas activas (para las nubes volumétricas)
+function pdcBounds() {
+  const sp = vsum && vsum.spots && vsum.spots.pdc; if (!sp || !sp.length) return null;
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9, z = 0;
+  for (const b of sp) { x0 = Math.min(x0, b.x - b.r); x1 = Math.max(x1, b.x + b.r); y0 = Math.min(y0, b.y - b.r); y1 = Math.max(y1, b.y + b.r); z = Math.max(z, hAt(b.x, b.y)); }
+  return [x0, y0, x1, y1, z];
+}
 const RH_MONTH = [0.55, 0.55, 0.62, 0.72, 0.82, 0.88, 0.88, 0.85, 0.80, 0.74, 0.66, 0.58];
 function fumState() {
   const { ms, off } = simDate(S.playT); const days = ms / 86400000;
@@ -816,7 +837,7 @@ function frame(now) {
     fx.write(camera, S.ex);
     const vb = fx.volParams || {};
     vol.update(dtr * visSpeed, { src: st || { MER: 0 }, plume: P, vents: src.vents, wind: src.wind, hAt, ex: S.ex, phreatic: S.scen === 'freatica', hist: plumeHist(S.playT),
-      fum: { F: fx.fumF, u: fx.fumU, dh: fx.fumDh, L: fx.fumL, dens: vb.fumDens || 0 }, glow: fx.ventGlow || 0, night: NIGHT, flash: fx.boltLife > 0 ? fx.flash : null });
+      fum: { F: fx.fumF, u: fx.fumU, dh: fx.fumDh, L: fx.fumL, dens: vb.fumDens || 0 }, glow: fx.ventGlow || 0, night: NIGHT, pdcB: pdcBounds(), pdcTex: player.U[1], flash: fx.boltLife > 0 ? fx.flash : null });
   } else { vol.on = false; vol.box.visible = false; }
   labels.update(innerWidth, innerHeight, S.show.labels);
   if (snd.on) {
@@ -830,6 +851,11 @@ function frame(now) {
     snd.update({ mer: st ? st.MER : 0, dVent, mud, dMud, lava, dLava, alt: cp.y / S.ex * 1000 });
     if (fx.boomEvent) { snd.boom(fx.boomEvent, dVent); fx.boomEvent = 0; }
   }
+  { const cp = camera.position, alt = cp.y / S.ex * 1000;
+    const k = RAIN * (1 - ss(4500, 9000, alt)); rainPass.U.uRain.value = k; rainPass.enabled = k > 0.05; rainPass.U.uTime.value = now / 1000;
+    const az = (src.wind.to || 90) * Math.PI / 180; const w = new THREE.Vector3(Math.sin(az), 0, -Math.cos(az)).multiplyScalar(src.wind.speed || 10);
+    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0); rainPass.U.uTilt.value.set(clamp(w.dot(right) / 25, -1.2, 1.2), 0);
+    rainPass.U.uLight.value.copy(terr.shared.uSkyCol.value).multiplyScalar(1.6).add(terr.shared.uSunCol.value.clone().multiplyScalar(0.15)); }
   composer.render();
   updateUI(false);
   // resolución dinámica: mantiene la fluidez bajando la densidad de píxeles cuando cae el cuadro por segundo

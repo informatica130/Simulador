@@ -249,7 +249,7 @@ export class FX {
     for (let k = 0; k < n; k++) { const b = pick(sp.lava); if (!b) break; const x = b.x + (rnd() - 0.5) * b.r, y = b.y + (rnd() - 0.5) * b.r;
       this.smoke.add(x * 1000, y * 1000, this.hAt(x, y) + 8, 0, 0, 4 + 6 * rnd(), 80 + 60 * rnd(), 30, 300, STEAM, 0.75, 0.77, 0.80, 0.25, 0.5); }
     // corrientes piroclásticas: nubes que ruedan pendiente abajo
-    n = emit('pdc', Math.min(250, sp.pdc.reduce((a, b) => a + b.w, 0) * 0.03));
+    n = this.volumetric ? 0 : emit('pdc', Math.min(250, sp.pdc.reduce((a, b) => a + b.w, 0) * 0.03));
     for (let k = 0; k < n; k++) { const b = pick(sp.pdc); if (!b) break; const x = b.x + (rnd() - 0.5) * b.r, y = b.y + (rnd() - 0.5) * b.r;
       this.smoke.add(x * 1000, y * 1000, this.hAt(x, y) + 20, b.vx * 0.8, b.vy * 0.8, 6 + 10 * rnd(), 80 + 120 * rnd(), 150, 900, PDC, 0.36, 0.33, 0.30, 0.9, 0.15); }
     // incendios: llamas y humo

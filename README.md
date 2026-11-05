@@ -120,6 +120,13 @@ Balance de energía en cada celda: advección de calor, radiación de Stefan-Bol
 superficie con costra (más caliente si la lava se mueve), convección, conducción al suelo, calor
 latente de cristalización y **pérdida de calor al fundir hielo**. Bajo el solidus (~950 °C) la lava
 se **solidifica y pasa a formar parte del relieve**, de modo que los flujos siguientes la rodean.
+**Canal bajo la celda:** con celdas de 60–120 m la lava se repartiría en una lámina delgada del ancho
+de la celda, que se enfría y se detiene a pocos cientos de metros. En la realidad corre por canales de
+decenas de metros, así que el motor supone un canal de ~40 m dentro de cada celda (factor
+Kc = Δx/40 m): el espesor real es H = h·Kc, el caudal de Jeffreys por ancho de celda crece Kc², la
+fluencia efectiva baja 1/Kc y el enfriamiento y la fusión de hielo se calculan con el espesor y el
+área de contacto del canal. Con esto, la colada SO de abril de 2009 avanza ~0,7 km/h en las primeras
+horas, en vez de quedar detenida a 0,9 km.
 La emisión sigue la curva de Wadge (1981). La superficie se dibuja con emisión de cuerpo negro: la
 costra oscura se agrieta y deja ver el núcleo incandescente.
 
@@ -183,11 +190,19 @@ paraguas sobre fuste alto) entre ~950 y 1.780 m, **lenga** en la zona alta y **c
 valles; nunca sobre lagos ni cauces. Cada árbol se quema, se cubre de ceniza o es arrasado por lava,
 CDP o lahar profundo según el estado del motor.
 
+### Lluvia visible
+
+Con lluvia (pestaña Escenario), además del efecto físico (escorrentía mayor sobre ceniza, lahares
+secundarios, incendios apagados) se ve el cielo cubierto: menos sol directo, luz difusa gris, más
+bruma, gotas inclinadas según el viento en tres capas de profundidad y el suelo mojado (más oscuro,
+con brillo y charcos en lo plano). Sobre ~5 km de altura la cámara queda por encima de la lluvia.
+
 ### Nubes volumétricas (columna, nube a la deriva, paraguas, vapor)
 
 La columna eruptiva, la nube de ceniza que arrastra el viento, la nube paraguas de las erupciones
 grandes y la pluma de vapor de la fumarola se dibujan con **raymarching volumétrico** (no con
-sprites). La forma sale de los modelos físicos: el eje y el radio de la pluma integral (perfil por
+sprites). También la nube que levantan las corrientes piroclásticas, que se lee directamente del
+espesor y la temperatura calculados por el motor. La forma sale de los modelos físicos: el eje y el radio de la pluma integral (perfil por
 altura y por distancia a favor del viento, con cúpula en el tope), el ascenso de Briggs para el
 vapor y, sobre ~2×10⁶ kg/s, una corriente de gravedad radial R ∝ MER^¼·t^⅔ con cortinas de caída de
 ceniza. El detalle de «coliflor» es ruido 3D de Worley invertido que asciende con la velocidad local
@@ -236,7 +251,8 @@ src/eruption.js   fuente eruptiva en el tiempo, núcleos de tefra
 src/plume.js      modelo integral de pluma y Tephra2
 src/terrain.js    shaders de terreno y fluidos
 src/fx.js         partículas físicas (balística, fuentes de lava, CDP, fuego, vapor menor)
-src/volume.js     nubes volumétricas por raymarching (columna, deriva, paraguas, fumarola)
+src/volume.js     nubes volumétricas por raymarching (columna, deriva, paraguas, CDP, fumarola)
+src/weather.js    lluvia visible, cielo cubierto
 src/forest.js     bosque 3D instanciado
 src/overlays.js   caminos, puentes, edificios, etiquetas
 src/ensemble.js   análisis probabilístico

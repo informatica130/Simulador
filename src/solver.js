@@ -90,7 +90,10 @@ void main(){
     float T = hl > 1e-4 ? (fl.z * fl.w + fn.z * fn.w) / hl : 1000.0;
     float hfl = max(max(tr.x + fl.z, tn.x + fn.z) - max(tr.x, tn.x), 0.02);
     float lO = d == 0 ? qa.z : qa.w, lV = 0.5 * ((d == 0 ? qam.z : qam.w) + (d == 0 ? qap.z : qap.w));
-    float ql = face(lO, lV, tr.x, fl.z, tn.x, fn.z, 1.5 * tauLava(T) / 2550.0, 3.0 * etaLava(T) / (2550.0 * hfl * hfl), 0.0);
+    // canal bajo la celda: la lava corre por un canal de ~40 m (no en una lámina del ancho de la celda);
+    // con espesor H = h·Kc el caudal de Jeffreys por ancho de celda crece Kc² y la fluencia baja 1/Kc
+    float Kc = max(1.0, uDx / 40.0);
+    float ql = face(lO, lV, tr.x, fl.z, tn.x, fn.z, 1.5 * tauLava(T) / (2550.0 * Kc), 3.0 * etaLava(T) / (2550.0 * hfl * hfl * Kc * Kc), 0.0);
     // ---- corriente piroclástica (Voellmy): μ·g·h + g·u²/ξ
     float zpa = za + fl.x, zpb = zb + fn.x;
     float hfp = max(max(zpa + fp.x, zpb + fpn.x) - max(zpa, zpb), 0.01);
@@ -145,7 +148,7 @@ void main(){
   // ---------- fusión de nieve y hielo (balance de energía)
   float swe = tr.y, mL = 0.0, mP = 0.0, mS = 0.0;
   if (swe > 0.0) {
-    if (fl.z > 0.02 && fl.w > 900.0) mL = 60.0 * (fl.w - 273.0) * (1.0 + 0.6 * min(ul, 3.0)) / (1000.0 * 3.34e5);   // capa de vapor (Leidenfrost) limita el flujo de calor
+    if (fl.z > 0.02 && fl.w > 900.0) mL = 60.0 * (fl.w - 273.0) * (1.0 + 0.6 * min(ul, 3.0)) / (1000.0 * 3.34e5) / max(1.0, uDx / 40.0);   // capa de vapor (Leidenfrost) limita el flujo de calor; sólo el canal toca el hielo
     if (fp.x > 0.02 && fp.y > 373.0) mP = fp.x * 1100.0 * 1100.0 * (fp.y - 273.0) * 0.5 / (1000.0 * 3.34e5 * 300.0);
     vec2 dd = vec2(p) - uSpat.xy; mS = uSpat.w * exp(-dot(dd, dd) / (2.0 * uSpat.z * uSpat.z + 1e-6));
   }
@@ -189,11 +192,11 @@ void main(){
     float Ts = 278.0 + (T1 - 278.0) * fc;
     float Q = 0.95 * 5.67e-8 * (pow(Ts, 4.0) - pow(278.0, 4.0)) + 25.0 * (Ts - 278.0) + 2.0 * (T1 - 278.0);
     float ceff = 1150.0 + 3.5e5 / 225.0;
-    float hh = max(hl1, 0.05);
+    float hh = max(hl1 * max(1.0, uDx / 40.0), 0.05);   // espesor real en el canal
     T1 -= uDt * Q / (2550.0 * ceff * hh);
     T1 -= uDt * fLm * 1000.0 * 3.34e5 / (2550.0 * ceff * hh);
   }
-  if (hl1 > 0.0 && (T1 < 1225.0 || (hl1 < 0.1 && T1 < 1320.0))) { bedAdd += hl1; hl1 = 0.0; T1 = 0.0; }
+  if (hl1 > 0.0 && (T1 < 1225.0 || (hl1 * max(1.0, uDx / 40.0) < 0.1 && T1 < 1320.0))) { bedAdd += hl1; hl1 = 0.0; T1 = 0.0; }
   // ---------- corriente piroclástica
   float psrc = diskRate(uPdc, p);
   float hp1 = fp.x + k * dp + uDt * psrc;

@@ -98,6 +98,7 @@ uniform vec3 uSun; uniform vec3 uSunCol; uniform vec3 uSkyCol; uniform vec3 uGnd
 uniform vec4 uGlow;               // intensidad del resplandor de la boca, altura de decaimiento, —, —
 uniform vec4 uFlash;              // rayo: x, y, z (m), intensidad
 uniform float uSteps; uniform float uLSteps; uniform float uDbg;
+uniform sampler2D tPdc; uniform vec4 uSim; uniform vec2 uSimN; uniform vec4 uPdcB; uniform vec4 uPdcB2;
 uniform sampler2D tDepth; uniform mat4 uInvVP; uniform vec2 uRes; uniform float uHasDepth;
 uniform vec3 uAshA; uniform vec3 uAshB;   // albedo de la ceniza en la base y en altura
 
@@ -125,6 +126,15 @@ vec4 tube(vec3 p, vec2 v, float z0, float zTop, float xMax, float rowZ, float ro
   return vec4(r, b, U, fz);
 }
 
+// corriente piroclástica del motor: espesor (m) y temperatura (K) interpolados
+vec2 pdcAt(vec2 xy){
+  vec2 c = vec2(((xy.x * 0.001 - uSim.x) / uSim.z - (uSim.w - 1.0) * 0.5) / uSim.w, ((uSim.y - xy.y * 0.001) / uSim.z - (uSim.w - 1.0) * 0.5) / uSim.w);
+  vec2 f = fract(c); ivec2 i = ivec2(floor(c)); ivec2 m = ivec2(uSimN) - 1;
+  vec2 a = texelFetch(tPdc, clamp(i, ivec2(0), m), 0).xy, b = texelFetch(tPdc, clamp(i + ivec2(1, 0), ivec2(0), m), 0).xy;
+  vec2 cc = texelFetch(tPdc, clamp(i + ivec2(0, 1), ivec2(0), m), 0).xy, d = texelFetch(tPdc, clamp(i + ivec2(1, 1), ivec2(0), m), 0).xy;
+  return mix(mix(a, b, f.x), mix(cc, d, f.x), f.y);
+}
+float gPdcT = 0.0;
 // densidad (1/m) y fracción de vapor; lo = sólo envolvente + ruido grueso (para sombras)
 vec2 density(vec3 p, bool lo){
   float dens = 0.0, steam = 0.0;
@@ -134,7 +144,7 @@ vec2 density(vec3 p, bool lo){
     if (t.x < 1.45) {
       float b = t.y;
       // coordenadas que ascienden con la pluma (lóbulos del tamaño del radio)
-      float bq = mix(b, uCol3.x, 0.6);
+      float bq = mix(b, uCol3.x, 0.3);
       vec3 q = vec3((p.xy - uCol.xy) / (bq * 3.4), (p.z - uT * clamp(t.z, 4.0, 90.0) * 0.5) / (uCol3.x * 3.4));
       vec4 n = texture(tNoise, q + vec3(0.13, 0.71, 0.0));
       float env = smoothstep(1.4, 0.45, t.x);
@@ -171,6 +181,23 @@ vec2 density(vec3 p, bool lo){
       float c = smoothstep(0.3, 0.75, n) * (1.0 - smoothstep(0.7, 1.1, e)) * smoothstep(0.0, 2500.0, zc - hT * 0.5 - p.z + 2500.0);
       c *= smoothstep(-200.0, 1500.0, p.z - ground(p.xy));
       dens += c * uUmb3.y;
+    }
+  }
+  // ---- nube de la corriente piroclástica (parte diluida que rueda y se eleva sobre la corriente densa)
+  if (uPdcB.z > uPdcB.x && p.x > uPdcB.x && p.x < uPdcB.z && p.y > uPdcB.y && p.y < uPdcB.w && p.z < uPdcB2.x) {
+    vec2 pv = pdcAt(p.xy);
+    if (pv.x > 0.02) {
+      float g = ground(p.xy);
+      float H = 90.0 + 70.0 * min(pv.x, 12.0) + 250.0 * smoothstep(500.0, 900.0, pv.y);
+      float zr = (p.z - g) / H;
+      if (zr > -0.2 && zr < 2.2) {
+        vec3 q = vec3(p.xy, p.z - uT * 6.0) / (H * 1.6);
+        vec4 n = texture(tNoise, q + vec3(0.21, 0.4, 0.0));
+        float env = clamp(smoothstep(0.02, 0.6, pv.x) * (1.0 - smoothstep(0.4, 1.9, zr)), 0.0, 1.0);
+        float dd = clamp(remap(n.r, 1.0 - env * 0.95, 1.0, 0.0, 1.0) * 1.5, 0.0, 1.0);
+        if (!lo && dd > 0.0) { float e = texture(tNoise, q * 2.6).g; dd = clamp(remap(dd, (1.0 - e) * 0.35, 1.0, 0.0, 1.0), 0.0, 1.0); }
+        dens += dd * 0.02; gPdcT = max(gPdcT, pv.y * step(0.001, dd));
+      }
     }
   }
   // ---- vapor de la fumarola
@@ -242,6 +269,7 @@ void main(){
     if (uFum2.y > 0.0) { vec4 tb = tube(p, uFum.xy, uFum.z - 10.0, uFum.w, uFum2.x, 2.0, 3.0); if (tb.x < 900.0) sd = min(sd, (tb.x - 1.5) * tb.y); else sd = min(sd, max(0.0, length(p.xy - uFum.xy) - uUmb3.w * 0.5)); }
     // dentro del paraguas (estructura grande) el paso fino puede ser mayor si la columna está lejos
     if (sd > 300.0 && uUmb2.w > 0.0) dt = max(dt, min(sd * 0.5, uUmb.w * 0.25));
+    if (uPdcB.z > uPdcB.x && p.x > uPdcB.x - 300.0 && p.x < uPdcB.z + 300.0 && p.y > uPdcB.y - 300.0 && p.y < uPdcB.w + 300.0 && p.z < uPdcB2.x + 200.0) sd = min(sd, 120.0);
     float dc = clamp(min(sd, sdU) * 0.9, dt, 3000.0);
     if (uHasDepth < 0.5 && p.z < ground(p.xy)) break;
     vec2 ds = density(p, false);
@@ -261,10 +289,11 @@ void main(){
       float powder = 1.0 - exp(-sig * 120.0);
       vec3 alb = mix(mix(uAshA, uAshB, smoothstep(uCol.z, uCol.z + 9000.0, p.z)), vec3(0.93, 0.94, 0.96), ds.y);
       // dispersión simple + aproximación de dispersión múltiple (la luz que se cuela en los lóbulos)
-      vec3 L = uSunCol * (Ts * (ph * 7.0 * mix(1.0, powder, 0.6) + 0.30) + pow(Ts, 0.3) * 0.14 * sunUp) + uSkyCol * (0.22 + 0.7 * Tup) + uGndCol * 0.5;
+      vec3 L = uSunCol * (Ts * (ph * 5.5 * mix(1.0, powder, 0.6) + 0.24) + pow(Ts, 0.3) * 0.10 * sunUp) + uSkyCol * (0.22 + 0.7 * Tup) + uGndCol * 0.5;
       // resplandor incandescente desde la boca (fuente de lava, ceniza caliente)
       float gz = max(0.0, p.z - uCol.z);
       L += vec3(1.0, 0.36, 0.08) * uGlow.x * exp(-gz / uGlow.y) * exp(-length(p.xy - uCol.xy) / (uGlow.y * 1.2)) * 1.6;
+      L += vec3(1.0, 0.35, 0.08) * uGlow.z * smoothstep(650.0, 1000.0, gPdcT) * 0.6; gPdcT = 0.0;
       if (uFlash.w > 0.0) L += vec3(0.75, 0.8, 1.0) * uFlash.w * 6.0 * exp(-length(p - uFlash.xyz) / 1600.0);
       vec3 S = alb * L;
       float st = exp(-sig * dt);
@@ -313,8 +342,8 @@ export class Volumes {
       uFum: V(0, 0, 3100, 3300), uFum2: V(1, 0, 400, 3),
       uSun: { value: new THREE.Vector3(0, 0, 1) }, uSunCol: { value: new THREE.Color() }, uSkyCol: { value: new THREE.Color() }, uGndCol: { value: new THREE.Color() },
       uFogCol: { value: new THREE.Color() }, uFogD: { value: 0.002 }, uAshHaze: { value: 0 },
-      uGlow: V(0, 900, 0, 0), uFlash: V(0, 0, 0, 0), uSteps: { value: 72 }, uLSteps: { value: 4 }, uDbg: { value: 0 }, tDepth: { value: null }, uInvVP: { value: new THREE.Matrix4() }, uRes: { value: new THREE.Vector2(1, 1) }, uHasDepth: { value: 0 },
-      uAshA: { value: new THREE.Color(0.36, 0.32, 0.28) }, uAshB: { value: new THREE.Color(0.66, 0.62, 0.57) },
+      uGlow: V(0, 900, 0, 0), uFlash: V(0, 0, 0, 0), uSteps: { value: 72 }, uLSteps: { value: 4 }, uDbg: { value: 0 }, tPdc: { value: null }, uSim: V(0, 0, 0.06, 2), uSimN: { value: new THREE.Vector2(1, 1) }, uPdcB: V(0, 0, 0, 0), uPdcB2: V(0, 0, 0, 0), tDepth: { value: null }, uInvVP: { value: new THREE.Matrix4() }, uRes: { value: new THREE.Vector2(1, 1) }, uHasDepth: { value: 0 },
+      uAshA: { value: new THREE.Color(0.27, 0.24, 0.21) }, uAshB: { value: new THREE.Color(0.58, 0.55, 0.50) },
     };
     this.mat = new THREE.ShaderMaterial({ vertexShader: VS, fragmentShader: FS, uniforms: this.U, side: THREE.BackSide, depthTest: false, depthWrite: false, transparent: true,
       blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneMinusSrcAlphaFactor });
@@ -396,6 +425,13 @@ export class Volumes {
       const m = 0.5 * f.dh + 0.06 * xMax + 120;
       grow(fx - m + Math.min(0, wx * xMax), fy - m + Math.min(0, wy * xMax), fz - 30, fx + m + Math.max(0, wx * xMax), fy + m + Math.max(0, wy * xMax), zTop + m);
     } else U.uFum2.value.y = 0;
+    // ---- nubes de corrientes piroclásticas (zona activa según el resumen del motor)
+    const pb = c.pdcB;
+    if (pb && c.pdcTex && !this.dbg.noPdc) {
+      U.tPdc.value = c.pdcTex; U.uPdcB.value.set(pb[0] * 1000 - 400, pb[1] * 1000 - 400, pb[2] * 1000 + 400, pb[3] * 1000 + 400);
+      U.uPdcB2.value.x = pb[4] + 2600;
+      grow(U.uPdcB.value.x, U.uPdcB.value.y, 300, U.uPdcB.value.z, U.uPdcB.value.w, pb[4] + 2600);
+    } else U.uPdcB.value.set(0, 0, 0, 0);
     this.on = bmax[0] > bmin[0];
     this.box.visible = this.on;
     if (!this.on) return;
@@ -406,7 +442,7 @@ export class Volumes {
     this.box.position.set((bmin[0] + bmax[0]) / 2000, (bmin[2] + bmax[2]) / 2000 * ex, -(bmin[1] + bmax[1]) / 2000);
     this.box.scale.set((bmax[0] - bmin[0]) / 1000 + 0.01, (bmax[2] - bmin[2]) / 1000 * ex + 0.01, (bmax[1] - bmin[1]) / 1000 + 0.01);
     this.box.updateMatrixWorld();
-    U.uGlow.value.set((c.glow || 0) * (0.08 + 0.92 * (c.night || 0)), 1100, 0, 0);
+    U.uGlow.value.set((c.glow || 0) * (0.08 + 0.92 * (c.night || 0)), 1100, c.night || 0, 0);
     if (c.flash) U.uFlash.value.set(c.flash.x * 1000, c.flash.y * 1000, c.flash.z, 1); else U.uFlash.value.w = 0;
   }
   profile(P) {
