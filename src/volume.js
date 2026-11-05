@@ -374,7 +374,7 @@ export class Volumes {
       U.uUmb3.value.x = Wt * 0.9; U.uUmb3.value.y = 0; // cortinas desactivadas: la bruma de ceniza del terreno representa la caída
       const lw = w0 + L * spread + 800;
       const ex1 = [cx - wx * (Rup + 300), cy - wy * (Rup + 300)], ex2 = [cx + wx * L, cy + wy * L];
-      grow(Math.min(ex1[0], ex2[0]) - lw, Math.min(ex1[1], ex2[1]) - lw, U.uUmb3.value.y > 0 ? 400 : zc - hT * 3 - L * 0.03, Math.max(ex1[0], ex2[0]) + lw, Math.max(ex1[1], ex2[1]) + lw, zc + hT * 1.5);
+      grow(Math.min(ex1[0], ex2[0]) - lw, Math.min(ex1[1], ex2[1]) - lw, U.uUmb3.value.y > 0 ? 400 : zc - hT * 3 - L * 0.03, Math.max(ex1[0], ex2[0]) + lw, Math.max(ex1[1], ex2[1]) + lw, zc + hT * 1.5 * (1 + L / 25000));
     } else U.uUmb2.value.w = 0;
     // ---- fumarola: ascenso de Briggs z = 1,6 F^⅓ x^⅔ / u hasta el ascenso final
     const f = c.fum;
