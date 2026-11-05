@@ -169,7 +169,10 @@ void main(){
   // --- micro-detalle procedural cerca de la cámara (textura bajo el píxel de 8–16 m)
   float near = 1.0 - smoothstep(1.5, 6.0, dist);
   if (near > 0.0 && uBase == 0) {
-    float m1 = fbm(vXY * 420.0), m2 = vnoise(vXY * 1500.0);
+    // se atenúa cuando el detalle es más fino que un píxel (evita el grano/centelleo)
+    float fwT = length(fwidth(vXY));
+    float a1 = 1.0 - smoothstep(0.3, 0.8, fwT * 420.0), a2 = 1.0 - smoothstep(0.3, 0.8, fwT * 1500.0);
+    float m1 = mix(0.5, fbm(vXY * 420.0), a1), m2 = mix(0.5, vnoise(vXY * 1500.0), a2);
     float veg = smoothstep(0.0, 0.05, alb.g - max(alb.r, alb.b));
     alb *= mix(1.0, mix(0.82 + 0.36 * m1, 0.75 + 0.5 * m2 * m1, veg), near);
     N = normalize(N + vec3(m1 - 0.5, 0.0, m2 - 0.5) * 0.25 * near * (1.0 - water));
@@ -238,7 +241,11 @@ void main(){
     col = mix(col, wc, water);
   }
   if (burn > 0.5) { float fl = 0.6 + 0.4 * sin(uTime * 13.0 + n1 * 30.0) * vnoise(vXY * 120.0 + uTime * 2.0);
-    col += vec3(1.0, 0.38, 0.08) * 3.5 * fl * smoothstep(0.35, 0.7, vnoise(vXY * 60.0 + uTime * 0.3)); }
+    // brasas y frente de llamas: de día casi no se ven, de noche brillan
+    float fwB = length(fwidth(vXY)), aB = 1.0 - smoothstep(0.3, 0.8, fwB * 160.0);
+    float pat = mix(0.45, smoothstep(0.45, 0.8, vnoise(vXY * 160.0 + uTime * 0.3) * 0.6 + vnoise(vXY * 45.0) * 0.4), aB);
+    col = mix(col, vec3(0.03, 0.025, 0.02), 0.5);
+    col += vec3(1.0, 0.36, 0.07) * (0.35 + 2.4 * uNight) * fl * pat; }
   // --- zona ya alcanzada por flujos (como la capa de inundación de la versión anterior)
   {
     // suelo empapado y embarrado por donde pasó el lahar (más oscuro y con brillo húmedo)
@@ -279,7 +286,7 @@ const FLUID_VS = /* glsl */`
 precision highp float; precision highp int; precision highp sampler2D;
 attribute vec2 aIJ;
 uniform sampler2D tTerr, tFluid, tFluidP, tFluxA, tFluxB, tBase; uniform ivec2 uSimN; uniform float uEx; uniform float uDxM; uniform float uArrows;
-varying vec3 vW; varying vec4 vF; varying vec2 vVel; varying vec2 vXY; varying float vHp; varying vec3 vN; varying float vSpd; varying float vEx; flat varying float vKind;
+varying vec3 vW; varying vec4 vF; varying vec2 vVel; varying vec2 vXY; varying float vHp; varying vec3 vN; varying float vSpd; varying float vEx; flat varying float vKind; varying vec2 vIJ;
 vec4 fl(ivec2 p){ return texelFetch(tFluid, clamp(p, ivec2(0), uSimN - 1), 0); }
 float hp_(ivec2 p){ return texelFetch(tFluidP, clamp(p, ivec2(0), uSimN - 1), 0).x; }
 float dep(ivec2 p){ vec4 f = fl(p); return f.x + f.z + hp_(p) * 0.6; }
@@ -303,16 +310,28 @@ void main(){
   vVel = vKind == 1.0 ? vl : vKind == 2.0 ? vp : vm; vSpd = length(vVel);
   float sx = surf(p + ivec2(1, 0)) - surf(p - ivec2(1, 0)), sy = surf(p + ivec2(0, 1)) - surf(p - ivec2(0, 1));
   vN = normalize(vec3(-sx / 1000.0 * uEx / (2.0 * uDxM / 1000.0), 1.0, -sy / 1000.0 * uEx / (2.0 * uDxM / 1000.0)));
-  vF = f; vHp = hp; vEx = f.x - texelFetch(tBase, p, 0).r;
+  vF = f; vHp = hp; vEx = f.x - texelFetch(tBase, p, 0).r; vIJ = aIJ;
   vec3 pos = vec3(position.x, y / 1000.0 * uEx, position.z);
   vW = pos; vXY = vec2(position.x, -position.z);
+  // sesgo de profundidad hacia la cámara: el flujo se ve sobre el relieve de 30 m aunque el lecho del
+  // motor (120 m) quede algo más bajo en cauces encajonados
+  vec3 toC = cameraPosition - pos; float dC = length(toC);
+  if (h > 0.02) pos += toC / max(dC, 1e-4) * min(dC * 0.4, 0.012 + dC * 0.008);
   gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
 }`;
 
 const FLUID_FS = /* glsl */`
-precision highp float;
-varying vec3 vW; varying vec4 vF; varying vec2 vVel; varying vec2 vXY; varying float vHp; varying vec3 vN; varying float vSpd; varying float vEx; flat varying float vKind;
+precision highp float; precision highp sampler2D; precision highp int;
+varying vec3 vW; varying vec4 vF; varying vec2 vVel; varying vec2 vXY; varying float vHp; varying vec3 vN; varying float vSpd; varying float vEx; flat varying float vKind; varying vec2 vIJ;
 uniform float uLavaGain; uniform float uArrows; uniform float uFlowVis;
+uniform sampler2D tFluid, tFluidP; uniform ivec2 uSimN;
+// interpolación bilineal por píxel de la profundidad (contornos suaves aunque la malla sea de 120 m)
+vec4 bil(sampler2D t, vec2 c){
+  vec2 f = fract(c); ivec2 i = ivec2(floor(c)); ivec2 m = uSimN - 1;
+  vec4 a = texelFetch(t, clamp(i, ivec2(0), m), 0), b = texelFetch(t, clamp(i + ivec2(1, 0), ivec2(0), m), 0);
+  vec4 cc = texelFetch(t, clamp(i + ivec2(0, 1), ivec2(0), m), 0), d = texelFetch(t, clamp(i + ivec2(1, 1), ivec2(0), m), 0);
+  return mix(mix(a, b, f.x), mix(cc, d, f.x), f.y);
+}
 ` + COMMON_GLSL + /* glsl */`
 float flowTex(vec2 xy, vec2 vel, float scale, float speed){
   float ph = uTime * speed; float a = fract(ph), b = fract(ph + 0.5);
@@ -332,8 +351,13 @@ float chevrons(vec2 xy, vec2 vel, float spacing, float t){
   return (1.0 - smoothstep(0.045, 0.11, line)) * (1.0 - smoothstep(0.30, 0.40, abs(cc)));
 }
 void main(){
-  float hm = vF.x, cv = vF.y, hl = vF.z, T = vF.w;
+  vec4 fb = bil(tFluid, vIJ); float hpb = bil(tFluidP, vIJ).x;
+  float hm = fb.x, cv = vF.y, hl = fb.z, T = vF.w;
   bool lava = vKind == 1.0, pdc = vKind == 2.0;
+  if (lava && hl < 0.02) discard;
+  if (pdc && hpb < 0.03) discard;
+  // tamaño del píxel en el suelo (km): atenúa el detalle más fino que un píxel (sin grano)
+  float fw = length(fwidth(vXY));
   if (!lava && !pdc && hm < 0.03) discard;
   float dist = length(uCamPos - vW);
   vec3 V = normalize(uCamPos - vW);
@@ -355,10 +379,10 @@ void main(){
   } else if (pdc) {
     float n = flowTex(vXY, vVel, 90.0, 0.4);
     vec3 N = normalize(vN + vec3(n - 0.5, 0.0, n - 0.5) * 0.5);
-    vec3 ash = vec3(0.40, 0.37, 0.36) * (0.8 + 0.4 * n);
+    vec3 ash = vec3(0.24, 0.225, 0.215) * (0.8 + 0.4 * n);
     col = ash * (uSunCol * (0.4 + 0.6 * max(dot(N, uSunDir), 0.0)) + uSkyCol);
     col += vec3(1.0, 0.4, 0.1) * 0.15 * smoothstep(600.0, 900.0, T) * n;
-    alpha = smoothstep(0.05, 0.6, vHp) * 0.9;
+    alpha = smoothstep(0.03, 0.6, hpb) * 0.9;
   } else {
     float spd = vSpd;
     // marco alineado con la corriente: vetas y ondas estiradas a lo largo del flujo
@@ -370,31 +394,32 @@ void main(){
     vec2 qa = vXY - adv * pa, qb = vXY - adv * pb + 11.7;
     vec2 sa = vec2(dot(qa, dir), dot(qa, nrm)) * vec2(110.0, 330.0), sb = vec2(dot(qb, dir), dot(qb, nrm)) * vec2(110.0, 330.0);
     // altura de la superficie: ondas estacionarias + turbulencia (dos fases cruzadas, sin saltos)
-    float wa = fbm(sa) * 0.6 + vnoise(sa * 3.1) * 0.4, wb = fbm(sb) * 0.6 + vnoise(sb * 3.1) * 0.4;
+    float aaF = 1.0 - smoothstep(0.25, 0.7, fw * 330.0 * 3.1);
+    float wa = fbm(sa) * 0.6 + (vnoise(sa * 3.1) - 0.5) * 0.4 * aaF + 0.2, wb = fbm(sb) * 0.6 + (vnoise(sb * 3.1) - 0.5) * 0.4 * aaF + 0.2;
     float n = mix(wa, wb, wab);
     vec2 e = vec2(0.004, 0.0);
-    float nx = mix(fbm(sa + e.xy * 110.0) * 0.6 + vnoise((sa + e.xy * 110.0) * 3.1) * 0.4, fbm(sb + e.xy * 110.0) * 0.6 + vnoise((sb + e.xy * 110.0) * 3.1) * 0.4, wab);
-    float ny = mix(fbm(sa + e.yx * 330.0) * 0.6 + vnoise((sa + e.yx * 330.0) * 3.1) * 0.4, fbm(sb + e.yx * 330.0) * 0.6 + vnoise((sb + e.yx * 330.0) * 3.1) * 0.4, wab);
-    float rough = 0.25 + 0.09 * min(spd, 10.0);
+    float nx = mix(fbm(sa + e.xy * 110.0) * 0.6 + (vnoise((sa + e.xy * 110.0) * 3.1) - 0.5) * 0.4 * aaF + 0.2, fbm(sb + e.xy * 110.0) * 0.6 + (vnoise((sb + e.xy * 110.0) * 3.1) - 0.5) * 0.4 * aaF + 0.2, wab);
+    float ny = mix(fbm(sa + e.yx * 330.0) * 0.6 + (vnoise((sa + e.yx * 330.0) * 3.1) - 0.5) * 0.4 * aaF + 0.2, fbm(sb + e.yx * 330.0) * 0.6 + (vnoise((sb + e.yx * 330.0) * 3.1) - 0.5) * 0.4 * aaF + 0.2, wab);
+    float rough = (0.25 + 0.09 * min(spd, 10.0)) * (1.0 - smoothstep(0.4, 1.2, fw * 330.0));
     vec2 gd = vec2(nx - n, ny - n) * rough * 9.0;
     vec2 gw = dir * gd.x + nrm * gd.y;
     vec3 N = normalize(vN + vec3(gw.x, 0.0, -gw.y));
     float edge = 1.0 - smoothstep(0.05, 0.7, hm);
     // barro volcánico: café grisáceo, más claro y opaco cuanto más sedimento; agua de crecida más verdosa
     float clean = 1.0 - smoothstep(0.004, 0.06, cv);
-    vec3 mud = mix(vec3(0.46, 0.38, 0.28), vec3(0.50, 0.46, 0.40), smoothstep(0.2, 0.55, cv));
-    mud = mix(mud, vec3(0.22, 0.24, 0.20), clean * 0.85);
+    vec3 mud = mix(vec3(0.19, 0.15, 0.105), vec3(0.22, 0.20, 0.17), smoothstep(0.2, 0.55, cv));
+    mud = mix(mud, vec3(0.16, 0.18, 0.15), clean * 0.85);
     mud *= 0.82 + 0.36 * n;
     // espuma y salpicadura en los rápidos y en las crestas
-    float crest = smoothstep(0.62, 0.82, n + 0.15 * vnoise(vXY * 900.0));
-    float foam = crest * smoothstep(1.0 + 2.0 * (1.0 - clean), 5.0 + 3.0 * (1.0 - clean), spd);
-    foam = max(foam, edge * smoothstep(0.55, 0.8, vnoise((vXY - adv * pa) * 520.0)) * smoothstep(0.5, 3.0, spd) * 0.6);
-    mud = mix(mud, vec3(0.78, 0.73, 0.64), foam * 0.7);
+    float crest = smoothstep(0.7, 0.9, n + 0.12 * (vnoise(vXY * 900.0) - 0.5) * (1.0 - smoothstep(0.2, 0.6, fw * 900.0)));
+    float foam = crest * smoothstep(2.0 + 2.0 * (1.0 - clean), 8.0 + 4.0 * (1.0 - clean), spd) * 0.6;
+    foam = max(foam, edge * smoothstep(0.55, 0.8, vnoise((vXY - adv * pa) * 520.0)) * smoothstep(0.5, 3.0, spd) * 0.4 * (1.0 - smoothstep(0.2, 0.6, fw * 520.0)));
+    mud = mix(mud, vec3(0.62, 0.58, 0.51), foam * 0.7);
     // escombros flotantes (troncos, bloques de pómez y escoria) arrastrados por la corriente
     vec2 dq = vec2(dot(vXY - adv * pa * 1.0, dir), dot(vXY, nrm)) * vec2(160.0, 260.0);
     vec2 dc = floor(dq), df = fract(dq) - 0.5;
     float dh = h21(dc + 7.3);
-    float debris = (dh > 0.86 ? 1.0 : 0.0) * (1.0 - smoothstep(0.08, 0.2, length(df * vec2(1.0, 2.5) + (h21(dc) - 0.5) * 0.4))) * wab;
+    float debris = (dh > 0.86 ? 1.0 : 0.0) * (1.0 - smoothstep(0.15, 0.4, fw * 260.0)) * (1.0 - smoothstep(0.08, 0.2, length(df * vec2(1.0, 2.5) + (h21(dc) - 0.5) * 0.4))) * wab;
     debris *= smoothstep(0.08, 0.3, cv) * smoothstep(0.3, 0.8, hm);
     mud = mix(mud, vec3(0.13, 0.10, 0.08), debris * 0.85);
     // orilla: lámina delgada y mojada, más oscura
@@ -409,6 +434,7 @@ void main(){
     col = mix(col, sky, fres * mix(0.25, 0.8, clean) * wet);
     col += mud * glowLight(vW, N);
     alpha = smoothstep(0.03, 0.35, hm) * mix(1.0, 0.85, clean);
+    if (hm < 0.03) discard;
   }
   // --- indicadores: color del fenómeno resaltado desde lejos, borde y flechas de movimiento
   if (uArrows > 0.5 && (lava || pdc || lahar)) {
@@ -419,7 +445,7 @@ void main(){
     float edge = 1.0 - smoothstep(0.05, 0.6, depth);
     col = mix(col, kc * 1.1, edge * 0.25 * (0.4 + 0.6 * far));
     float spacing = clamp(dist * 0.03, 0.035, 0.9);
-    float ch = chevrons(vXY, vVel, spacing, uTime) * (0.35 + 0.65 * smoothstep(1.5, 6.0, dist));
+    float ch = chevrons(vXY, vVel, spacing, uTime) * smoothstep(1.2, 4.0, dist);
     col = mix(col, kc * (lava ? 2.0 : 1.5), ch * 0.75);
     alpha = max(alpha, ch * 0.85);
     alpha = max(alpha, far * 0.85);

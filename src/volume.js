@@ -212,15 +212,15 @@ void main(){
     vec2 su = gl_FragCoord.xy / uRes;
     float zd = texture2D(tDepth, su).r;
     if (zd < 1.0) {
-      vec4 wp = uInvVP * vec4(su * 2.0 - 1.0, zd * 2.0 - 1.0, 1.0); wp.xyz /= wp.w;
-      t1 = min(t1, length(toM(wp.xyz) - ro));
+      vec4 wp = uInvVP * vec4(su * 2.0 - 1.0, zd * 2.0 - 1.0, 1.0);
+      if (abs(wp.w) > 1e-6) { wp.xyz /= wp.w; float ts = length(toM(wp.xyz) - ro); if (ts == ts) t1 = min(t1, ts); }
     }
   }
   if (t1 <= t0) discard;
   float mu = dot(rd, uSun), ph = phase(mu);
   float sunUp = smoothstep(-0.08, 0.05, uSun.z);
   vec3 col = vec3(0.0); float T = 1.0; float tHit = -1.0;
-  float jit = h13(vec3(gl_FragCoord.xy, fract(uT * 7.31)));
+  float jit = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
   float t = t0 + jit * max(20.0, t0 * 0.004);
   int N = int(uSteps);
   bool fine = false; int empty = 0; float last = 0.0;
@@ -274,6 +274,7 @@ void main(){
     t += dt;
   }
   float A = 1.0 - T;
+  if (isnan(A) || isinf(A) || any(isnan(col)) || any(isinf(col))) discard;
   if (uDbg > 0.5) { gl_FragColor = vec4(A, t0 / 20000.0, (t1 - t0) / 20000.0, 1.0); return; }
   if (A < 0.003) discard;
   // perspectiva aérea con la distancia al primer contacto
@@ -286,8 +287,13 @@ void main(){
 }`;
 
 const COMP_FS = /* glsl */`
-uniform sampler2D tVol; varying vec2 vUv;
-void main(){ gl_FragColor = texture2D(tVol, vUv); }`;
+uniform sampler2D tVol; uniform vec2 uTexel; varying vec2 vUv;
+// reconstrucción suave desde la resolución reducida (quita el grano del muestreo con jitter)
+void main(){
+  vec2 o = uTexel * 0.75;
+  vec4 c = texture2D(tVol, vUv) * 0.4 + (texture2D(tVol, vUv + vec2(o.x, o.y)) + texture2D(tVol, vUv + vec2(-o.x, o.y)) + texture2D(tVol, vUv + vec2(o.x, -o.y)) + texture2D(tVol, vUv - o)) * 0.15;
+  gl_FragColor = c;
+}`;
 
 // ------------------------------------------------------------------ clase principal
 export class Volumes {
@@ -365,7 +371,7 @@ export class Volumes {
       const dU = 0.004 * fade * Math.min(1, ageOn / 120) * Math.min(1.3, 0.55 + 0.12 * Math.log10(h.mer));
       const spread = big ? 0.12 : 0.07;
       U.uUmb.value.set(cx, cy, zc, hT); U.uUmb2.value.set(Rup, L, spread, dU); U.uUmb4.value.x = w0;
-      U.uUmb3.value.x = Wt * 0.9; U.uUmb3.value.y = big && !this.dbg.noCurt ? 0.00007 * fade * Math.min(1, ageOn / 900) : 0;
+      U.uUmb3.value.x = Wt * 0.9; U.uUmb3.value.y = 0; // cortinas desactivadas: la bruma de ceniza del terreno representa la caída
       const lw = w0 + L * spread + 800;
       const ex1 = [cx - wx * (Rup + 300), cy - wy * (Rup + 300)], ex2 = [cx + wx * L, cy + wy * L];
       grow(Math.min(ex1[0], ex2[0]) - lw, Math.min(ex1[1], ex2[1]) - lw, U.uUmb3.value.y > 0 ? 400 : zc - hT * 3 - L * 0.03, Math.max(ex1[0], ex2[0]) + lw, Math.max(ex1[1], ex2[1]) + lw, zc + hT * 1.5);
@@ -438,7 +444,7 @@ export class VolumePass extends Pass {
     super();
     this.vol = vol; this.camera = camera; this.overScene = overScene; this.needsSwap = false;
     this.rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
-    this.cmat = new THREE.ShaderMaterial({ uniforms: { tVol: { value: this.rt.texture } }, vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }', fragmentShader: COMP_FS,
+    this.cmat = new THREE.ShaderMaterial({ uniforms: { tVol: { value: this.rt.texture }, uTexel: { value: new THREE.Vector2(0.01, 0.01) } }, vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }', fragmentShader: COMP_FS,
       depthTest: false, depthWrite: false, transparent: true, blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor });
     this.quad = new FullScreenQuad(this.cmat);
     this.w = 4; this.h = 4; this.cc = new THREE.Color();
@@ -448,7 +454,7 @@ export class VolumePass extends Pass {
     const v = this.vol;
     if (v.on) {
       const w = Math.max(16, Math.round(this.w * v.scale)), h = Math.max(16, Math.round(this.h * v.scale));
-      if (this.rt.width !== w || this.rt.height !== h) this.rt.setSize(w, h);
+      if (this.rt.width !== w || this.rt.height !== h) { this.rt.setSize(w, h); this.cmat.uniforms.uTexel.value.set(1 / w, 1 / h); }
       renderer.getClearColor(this.cc); const ca = renderer.getClearAlpha();
       const U = v.U, cam = this.camera;
       U.tDepth.value = readBuffer.depthTexture || null; U.uHasDepth.value = readBuffer.depthTexture ? 1 : 0;

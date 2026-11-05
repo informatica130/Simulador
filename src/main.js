@@ -763,6 +763,8 @@ function dynRes(now) {
   if (now - drT < 1500) return; drT = now;
   if (fpsS < 18 && !S.lite) { if (++slowN >= 3) { S.lite = true; S.show.trees = false; forest.visible = false; bloom.enabled = false; fx.density = 0.45; S.prMax = 0.85; vol.setQuality(true);
     toast('Tu equipo va lento: activé el modo liviano (sin bosque 3D ni resplandor). Puedes cambiar la calidad en el panel derecho.'); } } else slowN = 0;
+  // nubes volumétricas: en equipos lentos se calculan a menor resolución
+  if (fpsS < 24 && vol.scale > 0.24) vol.scale = Math.max(0.24, vol.scale - 0.04); else if (fpsS > 50 && vol.scale < (S.lite ? 0.36 : 0.5)) vol.scale = Math.min(S.lite ? 0.36 : 0.5, vol.scale + 0.02);
   let pr = S.pr;
   if (fpsS < 26 && pr > 0.6) pr = Math.max(0.6, pr - 0.15);
   else if (fpsS > 50 && pr < S.prMax) pr = Math.min(S.prMax, pr + 0.1);
