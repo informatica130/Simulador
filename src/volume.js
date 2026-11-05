@@ -150,7 +150,7 @@ vec2 density(vec3 p, bool lo){
     vec2 d = p.xy - uUmb.xy; float along = dot(d, uW), lat = dot(d, vec2(-uW.y, uW.x));
     float zc = uUmb.z - max(along, 0.0) * 0.03, hT = uUmb.w * (1.0 + max(along, 0.0) / 25000.0);
     float e;
-    if (along < 0.0) e = length(vec2(along, lat)) / uUmb2.x;
+    if (along < 0.0) e = length(vec2(along / uUmb2.x, lat / uUmb4.x));   // elipse: continua con el lado a favor del viento
     else { float wdt = uUmb4.x + along * uUmb2.z; e = max(abs(lat) / wdt, along / uUmb2.y); }
     float v = (p.z - zc) / hT;
     float sh = min(1.0 - e * e, 1.0 - v * v * (v > 0.0 ? 1.0 : 0.6));
@@ -232,7 +232,7 @@ void main(){
     float sd = 3000.0, sdU = 3000.0;
     if (uUmb2.w > 0.0) {
       vec2 d = p.xy - uUmb.xy; float along = dot(d, uW), lat = abs(dot(d, vec2(-uW.y, uW.x)));
-      float dh = along < 0.0 ? length(vec2(along, lat)) - uUmb2.x * 1.1 : max(lat - (uUmb4.x + along * uUmb2.z) * 1.1, along - uUmb2.y * 1.05);
+      float dh = along < 0.0 ? (length(vec2(along / uUmb2.x, lat / uUmb4.x)) - 1.1) * min(uUmb2.x, uUmb4.x) : max(lat - (uUmb4.x + along * uUmb2.z) * 1.1, along - uUmb2.y * 1.05);
       float zc = uUmb.z - max(along, 0.0) * 0.03, hT = uUmb.w * (1.0 + max(along, 0.0) / 25000.0);
       float dz = abs(p.z - zc) - hT * 1.8;
       if (uUmb3.y > 0.0 && p.z < zc) dz = 0.0;   // cortinas bajo la nube
