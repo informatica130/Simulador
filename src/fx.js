@@ -375,7 +375,7 @@ export class FX {
       if (z < g + 2 && vz < 0) {
         if (t === BOMB) {
           // impacto: polvo
-          for (let k = 0; k < 4; k++) this.smoke.add(x, y, g + 10, (Math.random() - 0.5) * 15, (Math.random() - 0.5) * 15, 6 + Math.random() * 10, 25 + Math.random() * 20, 25, 120, DUST, 0.30, 0.27, 0.25, 0.7);
+          for (let k = 0; k < 2; k++) this.smoke.add(x, y, g + 10, (Math.random() - 0.5) * 15, (Math.random() - 0.5) * 15, 6 + Math.random() * 10, 25 + Math.random() * 20, 20, 90, DUST, 0.30, 0.27, 0.25, 0.3);
           E.type[i] = EMBER; E.v[o] = E.v[o + 1] = E.v[o + 2] = 0; E.p[o] = x; E.p[o + 1] = y; E.p[o + 2] = g + 2; E.life[i] = E.age[i] + 20; E.glow[i] *= 0.7; continue;
         }
         if (t === SPARK) { E.kill(i); continue; }

@@ -71,10 +71,10 @@
   });
   DIR.shot('a_orbit', {
     dur: 4.0, hour: 19.9, look: golden,
-    mk() { return orbit(0.03, 0, 7.5, 200, 232, 4100, 4.0, { lx: 0.03, ly: 0, la: -1700 }, { ease: ease.lin, fov: 40, shake: 5 }); },
+    mk() { return orbit(0.03, 0, 10.5, 202, 230, 4300, 4.0, { lx: 0.03, ly: 0, la: -2200 }, { ease: ease.lin, fov: 40, shake: 5 }); },
     sim: t => 650 + t * 10,
     draw(t) {
-      gradTop(0.4, 480); gradBot(0.85, 1100); vignette(0.8);
+      gradTop(0.4, 480); gradBot(1.0, 1250); vignette(0.8);
       // el título sigue en pantalla desde la toma anterior y se despide
       const a = 1 - ss(2.6, 3.6, t);
       txt('¿Y si el', 66, 1330, { size: 120, weight: 800, font: F.disp, track: -2, alpha: a });
@@ -231,14 +231,14 @@
 
   // =================================================================== 2 · EFUSIVA (tipo 1751)
   let trLava = null, LF = null;
-  const E2 = { look: { ...day, exp: 1.1 }, hour: 7.2, overlay: 3, warm: 3, glowK: 0.6, bloomK: 0.6 };
+  const E2 = { look: { ...night, exp: 1.3 }, hour: 20.6, warm: 3, glowK: 0.5, bloomK: 0.6, glowSize: 0.6, haloK: 0.3, ventK: 0.5 };
   const lavaFront = () => { trLava = trLava || DIR.trackFront('lava', 1200, 21600, 24); return trLava; };
   DIR.shot('e2_a', {
     dur: 4.0, ...E2,
     mk() { const tr = lavaFront(); LF = tr[tr.length - 1] || { x: 2, y: -3.4 };
       return drone([
-        { t: 0, x: 4.4, y: -1.0, a: 1100, lx: 1.3, ly: -2.2, la: 0, fov: 40 },
-        { t: 4.0, x: 4.9, y: -2.7, a: 1000, lx: 1.8, ly: -3.0, la: 0, fov: 40 },
+        { t: 0, x: -1.6, y: -4.6, a: 900, lx: 1.4, ly: -2.4, la: 0, fov: 42 },
+        { t: 4.0, x: -0.7, y: -5.4, a: 800, lx: 1.8, ly: -3.0, la: 0, fov: 42 },
       ], { ease: ease.lin, shake: 6 }); },
     sim: t => 1200 + t * 2400, rate: () => 2400,
     draw(t) {

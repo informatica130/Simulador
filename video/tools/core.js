@@ -36,6 +36,8 @@
     const fx = new ShaderPass(FXAA); fx.uniforms.resolution.value = new THREE.Vector2(1 / (innerWidth * A.S.pr), 1 / (innerHeight * A.S.pr));
     A.composer.addPass(fx); DIR.fxaa = fx;
     A.S.prMax = A.S.pr = 1; A.renderer.setPixelRatio(1); A.composer.setPixelRatio(1);
+    // la cámara del director manda: sin límites de órbita ni amortiguación
+    Object.assign(A.controls, { enableDamping: false, maxPolarAngle: Math.PI, minPolarAngle: 0, minDistance: 0, maxDistance: Infinity });
     // sin cambios automáticos de calidad, sin modo liviano
     A.S.lite = false; A.S.show.labels = false; A.S.show.arrows = false; A.S.show.roads = false; A.S.show.sound = false; A.applyShow();
     oc = document.createElement('canvas'); oc.width = cfg.OUTW; oc.height = cfg.OUTH; ox = oc.getContext('2d', { willReadFrequently: true });
