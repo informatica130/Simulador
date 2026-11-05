@@ -36,6 +36,11 @@
     const fx = new ShaderPass(FXAA); fx.uniforms.resolution.value = new THREE.Vector2(1 / (innerWidth * A.S.pr), 1 / (innerHeight * A.S.pr));
     A.composer.addPass(fx); DIR.fxaa = fx;
     A.S.prMax = A.S.pr = 1; A.renderer.setPixelRatio(1); A.composer.setPixelRatio(1);
+    // rayos: en las tomas el tiempo visual corre rápido y caería uno por cuadro (parpadeo);
+    // se espacian (≥ boltGap s de video) y se suaviza el destello sobre la nube volumétrica
+    { const f = A.fx, mb = f.makeBolt.bind(f); let lastB = -1e9;
+      f.makeBolt = (...a) => { if (DIR.t < lastB) lastB = -1e9; if (DIR.t - lastB < ((cur && cur.boltGap) ?? 0.7)) return; lastB = DIR.t; mb(...a); }; }
+    if (A.vol) { const v = A.vol, vu = v.update.bind(v); v.update = (d, c) => { vu(d, c); v.U.uFlash.value.w *= (cur && cur.flashK) ?? 0.45; }; }
     // la cámara del director manda: sin límites de órbita ni amortiguación
     Object.assign(A.controls, { enableDamping: false, maxPolarAngle: Math.PI, minPolarAngle: 0, minDistance: 0, maxDistance: Infinity });
     // sin cambios automáticos de calidad, sin modo liviano
@@ -65,7 +70,7 @@
     // calidad completa en cada toma (por si algo la bajó durante el cálculo)
     A.S.lite = false; A.S.prMax = A.S.pr = 1; A.renderer.setPixelRatio(1); A.composer.setPixelRatio(1); A.bloom.enabled = true; A.fx.density = sh.density ?? 1; A.fx.glowSize = sh.glowSize ?? 1; A.fx.haloK = sh.haloK ?? 1; A.fx.ventK = sh.ventK ?? 1;
     // nubes volumétricas a resolución completa y con más pasos de raymarching (máxima calidad)
-    if (A.vol) { A.vol.setQuality(false); A.vol.scale = sh.volScale ?? 1; A.vol.U.uSteps.value = sh.volSteps ?? 160; A.vol.U.uLSteps.value = 6; }
+    if (A.vol) { A.vol.dbg = sh.noVol ? { noCol: 1, noUmb: 1, noFum: 1 } : {}; A.vol.setQuality(false); A.vol.scale = sh.volScale ?? 1; A.vol.U.uSteps.value = sh.volSteps ?? 160; A.vol.U.uLSteps.value = 6; }
     A.setOverlay(sh.overlay || 0); A.terr.U.uBase.value = sh.base || 0; A.terr.U.uArrMax.value = sh.arrMax || 180; A.terr.U.uArrIso.value = sh.arrIso || 10;
     if (sh.hour != null) A.S.hour = sh.hour;
     // intensidad del brillo incandescente (partículas aditivas) y del bloom, por toma

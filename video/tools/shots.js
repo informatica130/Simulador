@@ -405,7 +405,7 @@
       clock(t, lerp(tBr + 400, tA1 + 200, t / 5.4));
     },
   });
-  DIR.shot('e4_arr', {
+  DIR.shot('e4_arr', { noVol: true,
     dur: 5.0, look: day, overlay: 2, arrMax: 300, arrIso: 30, warm: 2, roads: true,
     mk() { return drone([
       { t: 0, x: 4.4, y: -26.0, z: 30000, lx: 4.0, ly: -8.5, la: 0, fov: 38 },
