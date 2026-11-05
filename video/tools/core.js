@@ -40,7 +40,7 @@
     // se espacian (≥ boltGap s de video) y se suaviza el destello sobre la nube volumétrica
     { const f = A.fx, mb = f.makeBolt.bind(f); let lastB = -1e9;
       f.makeBolt = (...a) => { if (DIR.t < lastB) lastB = -1e9; if (DIR.t - lastB < ((cur && cur.boltGap) ?? 0.7)) return; lastB = DIR.t; mb(...a); }; }
-    if (A.vol) { const v = A.vol, vu = v.update.bind(v); v.update = (d, c) => { vu(d, c); v.U.uFlash.value.w *= (cur && cur.flashK) ?? 0.45; }; }
+    if (A.vol) { const v = A.vol, vu = v.update.bind(v); v.update = (d, c) => { vu(d, c); v.U.uFlash.value.w *= (cur && cur.flashK) ?? 0.45; v.U.uGlow.value.x *= (cur && cur.volGlowK) ?? 1; }; }
     // la cámara del director manda: sin límites de órbita ni amortiguación
     Object.assign(A.controls, { enableDamping: false, maxPolarAngle: Math.PI, minPolarAngle: 0, minDistance: 0, maxDistance: Infinity });
     // sin cambios automáticos de calidad, sin modo liviano

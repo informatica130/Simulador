@@ -173,7 +173,7 @@
   const chap = (t, num, title, col, t1 = 4.4) => chapter(t, 0.25, t1, num, title, null, { y: 1500, size: 130, color: col });
 
   // =================================================================== 1 · ESTROMBOLIANA (como 2008, de noche)
-  const N1 = { look: night, glowK: 0.4, bloomK: 0.5, glowSize: 0.4, haloK: 0.15, ventK: 0.45 };
+  const N1 = { look: night, glowK: 0.4, bloomK: 0.5, glowSize: 0.4, haloK: 0.15, ventK: 0.45, volGlowK: 0.35 };
   DIR.shot('e1_a', {
     dur: 4.5, ...N1, warm: 4,
     mk() { return drone([
@@ -231,7 +231,7 @@
 
   // =================================================================== 2 · EFUSIVA (tipo 1751)
   let trLava = null, LF = null;
-  const E2 = { look: { ...night, exp: 1.3 }, hour: 20.6, warm: 3, glowK: 0.5, bloomK: 0.6, glowSize: 0.6, haloK: 0.3, ventK: 0.5 };
+  const E2 = { look: { ...night, exp: 1.3 }, hour: 20.6, warm: 3, glowK: 0.5, bloomK: 0.6, glowSize: 0.6, haloK: 0.3, ventK: 0.5, volGlowK: 0.6 };
   const lavaFront = () => { trLava = trLava || DIR.trackFront('lava', 1200, 21600, 24); return trLava; };
   DIR.shot('e2_a', {
     dur: 4.0, ...E2,
@@ -292,7 +292,7 @@
       clock(t, 3700 + t * 400);
     },
   });
-  DIR.shot('e3_ash', {
+  DIR.shot('e3_ash', { noVol: true,
     dur: 6.5, look: day, overlay: 4, bgFilter: () => 'brightness(0.86) contrast(1.12) saturate(1.1)', warm: 2, roads: true,
     mk() { return drone([
       { t: 0, x: 4.4, y: -24.5, z: 36000, lx: 4.6, ly: -8.5, la: 0, fov: 38 },
