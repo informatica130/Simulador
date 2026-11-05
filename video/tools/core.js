@@ -64,6 +64,8 @@
     A.S.show.roads = !!sh.roads; A.S.show.labels = false; A.S.show.arrows = false; A.S.show.daylight = !!sh.daylight; A.S.show.trees = sh.trees !== false; A.applyShow();
     // calidad completa en cada toma (por si algo la bajó durante el cálculo)
     A.S.lite = false; A.S.prMax = A.S.pr = 1; A.renderer.setPixelRatio(1); A.composer.setPixelRatio(1); A.bloom.enabled = true; A.fx.density = sh.density ?? 1; A.fx.glowSize = sh.glowSize ?? 1; A.fx.haloK = sh.haloK ?? 1; A.fx.ventK = sh.ventK ?? 1;
+    // nubes volumétricas a resolución completa y con más pasos de raymarching (máxima calidad)
+    if (A.vol) { A.vol.setQuality(false); A.vol.scale = sh.volScale ?? 1; A.vol.U.uSteps.value = sh.volSteps ?? 160; A.vol.U.uLSteps.value = 6; }
     A.setOverlay(sh.overlay || 0); A.terr.U.uBase.value = sh.base || 0; A.terr.U.uArrMax.value = sh.arrMax || 180; A.terr.U.uArrIso.value = sh.arrIso || 10;
     if (sh.hour != null) A.S.hour = sh.hour;
     // intensidad del brillo incandescente (partículas aditivas) y del bloom, por toma
