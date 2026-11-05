@@ -101,6 +101,12 @@ estado es la condición inicial. Así:
 Todas las estadísticas de lahar (profundidad máxima, llegada, presión dinámica) se calculan como
 **exceso sobre el nivel base**.
 
+Render del lahar: superficie de barro con vetas y ondas estiradas a lo largo de la corriente (dos
+fases advectadas con la velocidad del solver, sin saltos), normales de detalle, espuma en crestas y
+rápidos, escombros flotantes (troncos, bloques) y orilla delgada más oscura. El color va del café
+grisáceo (mucho sedimento) al agua de crecida verdosa según la concentración. Por donde pasó queda
+el suelo empapado (oscuro y brillante) que se seca con las horas.
+
 ### Lava
 
 Mismo esquema, con reología **Bingham** dependiente de la temperatura:
@@ -177,13 +183,25 @@ paraguas sobre fuste alto) entre ~950 y 1.780 m, **lenga** en la zona alta y **c
 valles; nunca sobre lagos ni cauces. Cada árbol se quema, se cubre de ceniza o es arrasado por lava,
 CDP o lahar profundo según el estado del motor.
 
+### Nubes volumétricas (columna, nube a la deriva, paraguas, vapor)
+
+La columna eruptiva, la nube de ceniza que arrastra el viento, la nube paraguas de las erupciones
+grandes y la pluma de vapor de la fumarola se dibujan con **raymarching volumétrico** (no con
+sprites). La forma sale de los modelos físicos: el eje y el radio de la pluma integral (perfil por
+altura y por distancia a favor del viento, con cúpula en el tope), el ascenso de Briggs para el
+vapor y, sobre ~2×10⁶ kg/s, una corriente de gravedad radial R ∝ MER^¼·t^⅔ con cortinas de caída de
+ceniza. El detalle de «coliflor» es ruido 3D de Worley invertido que asciende con la velocidad local
+de la pluma. Luz: sombra hacia el sol por Beer–Lambert, fase Henyey–Greenstein de dos lóbulos,
+efecto «polvo» en los bordes, aproximación de dispersión múltiple, luz del cielo, resplandor naranja
+desde la fuente de lava (sólo de noche) y destellos de rayos. Se calcula a resolución reducida
+(36 % en modo liviano, 50 % normal) y el relieve recorta cada rayo con el búfer de profundidad.
+
 ### Partículas y efectos
 
-Humo y vapor con sombreado volumétrico aproximado: turbulencia que evoluciona en el tiempo,
+Humo y vapor menores con sombreado volumétrico aproximado: turbulencia que evoluciona en el tiempo,
 erosión de bordes con la edad, autosombra del lado opuesto al sol y dispersión de Mie hacia
 adelante (Henyey-Greenstein: bordes plateados a contraluz); se desvanecen al tocar el relieve.
-Columna guiada por la solución de la pluma (eje, radio, velocidad) que se abre en la nube paraguas;
-fuentes de lava y **bombas balísticas con arrastre aerodinámico** (Mastin 2001) que dejan polvo y
+Fuentes de lava y **bombas balísticas con arrastre aerodinámico** (Mastin 2001) que dejan polvo y
 brasas al caer; explosiones estrombolianas por pulsos; rayos volcánicos; vapor donde la lava toca el
 hielo; fumarolas; nubes de CDP; llamas y humo de incendios; rocío de barro en lahares rápidos.
 
@@ -217,7 +235,8 @@ src/runner.js     paso adaptativo, fuentes, series de tiempo
 src/eruption.js   fuente eruptiva en el tiempo, núcleos de tefra
 src/plume.js      modelo integral de pluma y Tephra2
 src/terrain.js    shaders de terreno y fluidos
-src/fx.js         partículas físicas (columna, fumarolas, balística, CDP, fuego)
+src/fx.js         partículas físicas (balística, fuentes de lava, CDP, fuego, vapor menor)
+src/volume.js     nubes volumétricas por raymarching (columna, deriva, paraguas, fumarola)
 src/forest.js     bosque 3D instanciado
 src/overlays.js   caminos, puentes, edificios, etiquetas
 src/ensemble.js   análisis probabilístico

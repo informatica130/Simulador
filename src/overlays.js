@@ -16,7 +16,7 @@ void main(){
   float cut = max(max(step(0.5, st.x), step(0.3, st.z)), step(0.3, fp.w));
   float now = max(step(0.2, fl.x), max(step(0.1, fl.z), step(0.1, fp.x)));
   vCut = max(cut, now);
-  vec3 base = aCls < 1.5 ? vec3(1.0, 0.86, 0.45) : aCls < 3.5 ? vec3(0.96, 0.93, 0.85) : aCls < 5.5 ? vec3(0.80, 0.76, 0.68) : vec3(0.62, 0.55, 0.45);
+  vec3 base = aCls < 1.5 ? vec3(0.78, 0.68, 0.46) : aCls < 3.5 ? vec3(0.62, 0.60, 0.56) : aCls < 5.5 ? vec3(0.52, 0.49, 0.44) : vec3(0.45, 0.40, 0.33);
   vCol = mix(base, now > 0.5 ? vec3(1.6, 0.1, 0.05) : vec3(1.0, 0.12, 0.08), vCut);
   vec3 p = vec3(position.x, (aH + max(d, 0.0) + 6.0) / 1000.0 * uEx, position.z);
   vW = p;
@@ -24,7 +24,7 @@ void main(){
 }`;
 const ROAD_FS = /* glsl */`
 precision highp float; varying vec3 vCol; varying float vCut; varying vec3 vW; uniform float uOpacity; uniform vec3 uCamPos;
-void main(){ float d = length(vW - uCamPos); float a = uOpacity * (1.0 - smoothstep(25.0, 70.0, d)); gl_FragColor = vec4(vCol, max(a, vCut * 0.9)); }`;
+void main(){ float d = length(vW - uCamPos); float a = uOpacity * 0.7 * (1.0 - smoothstep(6.0, 28.0, d)); gl_FragColor = vec4(vCol, max(a, vCut * 0.9)); }`;
 
 const BLD_VS = /* glsl */`
 precision highp float; precision highp sampler2D;
