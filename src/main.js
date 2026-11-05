@@ -118,7 +118,7 @@ async function boot() {
   S.playing = true; $('play').textContent = '❚❚';
   toast('Simulación iniciada · arrastra para mover, botón derecho para rotar, rueda para acercar, clic para medir');
   last = performance.now(); requestAnimationFrame(frame);
-  window.APP = { get vol() { return vol; }, fronts: () => vsum && vsum.spots && vsum.spots.fronts, fxWarm, S, get forest() { return forest; }, get player() { return player; }, run, sol, src: () => src, camera, controls, goView, applyScenario, setOverlay, flyTo, readback, terr,
+  window.APP = { get vol() { return vol; }, fronts: () => vsum && vsum.spots && vsum.spots.fronts, fxWarm, S, get forest() { return forest; }, get player() { return player; }, run, sol, src: () => src, camera, controls, goView, applyScenario, setOverlay, flyTo, readback, terr, fx,
     // usados por el grabador de video (video/tools)
     renderer, scene, sky, stars, composer, bloom, labels, ovl, D, hAt, geo, sites, gaugePts, idx, totalsAt, applyShow, setEx, legend, get smp() { return smp; }, get vsum() { return vsum; }, get events() { return events; }, series };
 }
