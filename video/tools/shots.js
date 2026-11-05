@@ -270,8 +270,8 @@
   DIR.shot('e3_a', {
     dur: 5.5, look: { ...day, fogD: 1.1 }, warm: 4, glowSize: 0.55, haloK: 0.4,
     mk() { return drone([
-      { t: 0, x: 2.6, y: -8.6, a: 450, lx: 0.03, ly: 0, la: 1500, fov: 46 },
-      { t: 5.5, x: 2.2, y: -7.4, a: 1300, lx: 0.3, ly: 0, la: 3800, fov: 46 },
+      { t: 0, x: 2.6, y: -8.6, a: 450, lx: 0.03, ly: 0, la: 100, fov: 48 },
+      { t: 5.5, x: 2.2, y: -7.4, a: 1200, lx: 0.3, ly: 0, la: 1200, fov: 48 },
     ], { ease: ease.inOut, shake: 7 }); },
     sim: t => 1500 + t * 400, rate: () => 400,
     draw(t) {
@@ -313,8 +313,8 @@
   DIR.shot('e4_a', {
     dur: 4.6, look: { ...day, fogD: 1.1 }, warm: 4, glowSize: 0.55, haloK: 0.4,
     mk() { return drone([
-      { t: 0, x: 2.2, y: -6.8, a: 520, lx: 0.03, ly: 0, la: 1500, fov: 46 },
-      { t: 4.6, x: 1.3, y: -4.2, a: 700, lx: 0.03, ly: 0, la: 2300, fov: 46 },
+      { t: 0, x: 2.2, y: -6.8, a: 520, lx: 0.03, ly: 0, la: 200, fov: 48 },
+      { t: 4.6, x: 1.3, y: -4.2, a: 700, lx: 0.03, ly: 0, la: 900, fov: 48 },
     ], { ease: ease.inOut, shake: 9, bank: 1.4 }); },
     sim: t => 300 + t * 160, rate: () => 160,
     draw(t) {
@@ -327,8 +327,8 @@
   DIR.shot('e4_b', {
     dur: 4.8, look: { ...day, fogD: 1.1 }, warm: 4, glowSize: 0.55, haloK: 0.4,
     mk() { return drone([
-      { t: 0, x: 3.9, y: -6.3, z: 3100, lx: 0.1, ly: -0.1, lz: 4600, fov: 46 },
-      { t: 4.8, x: 4.6, y: -7.4, z: 5000, lx: 0.3, ly: -0.1, lz: 8200, fov: 46 },
+      { t: 0, x: 6.0, y: -6.8, z: 3300, lx: 0.2, ly: -0.1, lz: 4300, fov: 50 },
+      { t: 4.8, x: 7.2, y: -4.9, z: 3600, lx: 0.3, ly: -0.1, lz: 4800, fov: 50 },
     ], { ease: ease.inOut, shake: 6 }); },
     sim: t => 1040 + t * 100, rate: () => 100,
     draw(t) {
