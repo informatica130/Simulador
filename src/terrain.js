@@ -240,10 +240,21 @@ void main(){
   if (burn > 0.5) { float fl = 0.6 + 0.4 * sin(uTime * 13.0 + n1 * 30.0) * vnoise(vXY * 120.0 + uTime * 2.0);
     col += vec3(1.0, 0.38, 0.08) * 3.5 * fl * smoothstep(0.35, 0.7, vnoise(vXY * 60.0 + uTime * 0.3)); }
   // --- zona ya alcanzada por flujos (como la capa de inundación de la versión anterior)
+  {
+    // suelo empapado y embarrado por donde pasó el lahar (más oscuro y con brillo húmedo)
+    float wetZ = smoothstep(0.1, 0.8, vB.z) * (1.0 - water) * (uBase == 0 ? 1.0 : 0.0);
+    if (wetZ > 0.0) {
+      float age = vB.w > 0.0 ? max(0.0, uSimT - vB.w) / 3600.0 : 0.0;
+      float dry = smoothstep(1.0, 18.0, age);
+      vec3 wm = mix(vec3(0.10, 0.085, 0.07), vec3(0.30, 0.27, 0.23), dry) * (0.85 + 0.3 * n2);
+      col = mix(col, wm * (uSunCol * ndl * sh + uSkyCol * ao), wetZ * 0.75);
+      col += uSunCol * pow(max(dot(N, H), 0.0), 90.0) * 0.25 * wetZ * (1.0 - dry) * sh;
+    }
+  }
   if (uZone > 0.5 && uOverlay == 0) {
     float zl = smoothstep(0.08, 0.6, vB.z), zv = smoothstep(0.05, 0.4, lavaMax), zp = smoothstep(0.05, 0.5, vD.x);
     vec3 zc = vec3(1.0, 0.62, 0.18) * zl + vec3(1.0, 0.25, 0.08) * zv + vec3(0.75, 0.5, 1.0) * zp;
-    float za = max(max(zl * (0.32 + 0.25 * smoothstep(0.6, 5.0, vB.z)), zv * 0.35), zp * 0.35);
+    float za = max(max(zl * (0.16 + 0.14 * smoothstep(0.6, 5.0, vB.z)) * (0.5 + 0.5 * smoothstep(2.0, 8.0, dist)), zv * 0.25), zp * 0.3);
     if (za > 0.0) col = mix(col, zc / max(zl + zv + zp, 1e-3) * (0.35 + 0.65 * (uSunCol.r * 0.3 + 0.5)), za);
   }
   // --- capas de análisis
@@ -280,7 +291,7 @@ void main(){
   float hn = max(max(dep(p + ivec2(1, 0)), dep(p - ivec2(1, 0))), max(dep(p + ivec2(0, 1)), dep(p - ivec2(0, 1))));
   // vista lejana: los flujos se elevan un poco para no quedar ocultos por el relieve más fino
   float camD = length(cameraPosition - vec3(position.x, bed / 1000.0 * uEx, position.z));
-  float lift = uArrows * clamp((camD - 3.0) * 1.2, 0.0, 30.0);
+  float lift = 1.5 + clamp(camD * 2.5, 0.0, 6.0) + uArrows * clamp((camD - 3.0) * 1.2, 0.0, 30.0);
   float y = h > 0.02 ? bed + h + 0.6 + lift : bed - (hn > 0.0 ? 0.3 : 4.0);
   vec4 q = texelFetch(tFluxA, p, 0), qW = texelFetch(tFluxA, clamp(p - ivec2(1, 0), ivec2(0), uSimN - 1), 0), qN = texelFetch(tFluxA, clamp(p - ivec2(0, 1), ivec2(0), uSimN - 1), 0);
   vec4 b = texelFetch(tFluxB, p, 0), bW = texelFetch(tFluxB, clamp(p - ivec2(1, 0), ivec2(0), uSimN - 1), 0), bN = texelFetch(tFluxB, clamp(p - ivec2(0, 1), ivec2(0), uSimN - 1), 0);
@@ -350,38 +361,67 @@ void main(){
     alpha = smoothstep(0.05, 0.6, vHp) * 0.9;
   } else {
     float spd = vSpd;
-    float n = flowTex(vXY, vVel, 120.0, 0.25 + spd * 0.05);
-    float nb = flowTex(vXY * 1.7, vVel, 260.0, 0.4 + spd * 0.06);
-    vec3 N = normalize(vN + vec3(n - 0.5, 0.0, nb - 0.5) * (0.12 + 0.05 * min(spd, 12.0)));
-    // barro volcánico: café claro y turbio; más gris y espeso cuanto más sedimento lleva
-    vec3 mud = mix(vec3(0.55, 0.44, 0.30), vec3(0.47, 0.42, 0.36), smoothstep(0.2, 0.55, cv));
+    // marco alineado con la corriente: vetas y ondas estiradas a lo largo del flujo
+    vec2 dir = spd > 0.05 ? vVel / spd : vec2(1.0, 0.0);
+    vec2 nrm = vec2(-dir.y, dir.x);
+    float ph = uTime * (0.08 + 0.02 * min(spd, 15.0));
+    float pa = fract(ph), pb = fract(ph + 0.5), wab = 1.0 - abs(1.0 - 2.0 * pa);
+    vec2 adv = vVel * 0.001 * 140.0;
+    vec2 qa = vXY - adv * pa, qb = vXY - adv * pb + 11.7;
+    vec2 sa = vec2(dot(qa, dir), dot(qa, nrm)) * vec2(110.0, 330.0), sb = vec2(dot(qb, dir), dot(qb, nrm)) * vec2(110.0, 330.0);
+    // altura de la superficie: ondas estacionarias + turbulencia (dos fases cruzadas, sin saltos)
+    float wa = fbm(sa) * 0.6 + vnoise(sa * 3.1) * 0.4, wb = fbm(sb) * 0.6 + vnoise(sb * 3.1) * 0.4;
+    float n = mix(wa, wb, wab);
+    vec2 e = vec2(0.004, 0.0);
+    float nx = mix(fbm(sa + e.xy * 110.0) * 0.6 + vnoise((sa + e.xy * 110.0) * 3.1) * 0.4, fbm(sb + e.xy * 110.0) * 0.6 + vnoise((sb + e.xy * 110.0) * 3.1) * 0.4, wab);
+    float ny = mix(fbm(sa + e.yx * 330.0) * 0.6 + vnoise((sa + e.yx * 330.0) * 3.1) * 0.4, fbm(sb + e.yx * 330.0) * 0.6 + vnoise((sb + e.yx * 330.0) * 3.1) * 0.4, wab);
+    float rough = 0.25 + 0.09 * min(spd, 10.0);
+    vec2 gd = vec2(nx - n, ny - n) * rough * 9.0;
+    vec2 gw = dir * gd.x + nrm * gd.y;
+    vec3 N = normalize(vN + vec3(gw.x, 0.0, -gw.y));
+    float edge = 1.0 - smoothstep(0.05, 0.7, hm);
+    // barro volcánico: café grisáceo, más claro y opaco cuanto más sedimento; agua de crecida más verdosa
     float clean = 1.0 - smoothstep(0.004, 0.06, cv);
-    mud = mix(mud, vec3(0.05, 0.11, 0.105), clean);
-    mud *= 0.85 + 0.3 * n;
-    float foam = smoothstep(0.55, 0.85, nb + n * 0.4) * smoothstep(1.5 + 2.0 * (1.0 - clean), 6.0 + 4.0 * (1.0 - clean), spd) * (1.0 - smoothstep(0.35, 0.55, cv));
-    mud = mix(mud, vec3(0.80, 0.74, 0.64), foam * 0.75);
+    vec3 mud = mix(vec3(0.46, 0.38, 0.28), vec3(0.50, 0.46, 0.40), smoothstep(0.2, 0.55, cv));
+    mud = mix(mud, vec3(0.22, 0.24, 0.20), clean * 0.85);
+    mud *= 0.82 + 0.36 * n;
+    // espuma y salpicadura en los rápidos y en las crestas
+    float crest = smoothstep(0.62, 0.82, n + 0.15 * vnoise(vXY * 900.0));
+    float foam = crest * smoothstep(1.0 + 2.0 * (1.0 - clean), 5.0 + 3.0 * (1.0 - clean), spd);
+    foam = max(foam, edge * smoothstep(0.55, 0.8, vnoise((vXY - adv * pa) * 520.0)) * smoothstep(0.5, 3.0, spd) * 0.6);
+    mud = mix(mud, vec3(0.78, 0.73, 0.64), foam * 0.7);
+    // escombros flotantes (troncos, bloques de pómez y escoria) arrastrados por la corriente
+    vec2 dq = vec2(dot(vXY - adv * pa * 1.0, dir), dot(vXY, nrm)) * vec2(160.0, 260.0);
+    vec2 dc = floor(dq), df = fract(dq) - 0.5;
+    float dh = h21(dc + 7.3);
+    float debris = (dh > 0.86 ? 1.0 : 0.0) * (1.0 - smoothstep(0.08, 0.2, length(df * vec2(1.0, 2.5) + (h21(dc) - 0.5) * 0.4))) * wab;
+    debris *= smoothstep(0.08, 0.3, cv) * smoothstep(0.3, 0.8, hm);
+    mud = mix(mud, vec3(0.13, 0.10, 0.08), debris * 0.85);
+    // orilla: lámina delgada y mojada, más oscura
+    mud *= 1.0 - edge * 0.35;
     vec3 H = normalize(uSunDir + V);
     float fres = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
-    col = mud * (uSunCol * max(dot(N, uSunDir), 0.0) + uSkyCol * (0.5 + 0.5 * N.y));
-    col += uSunCol * pow(max(dot(N, H), 0.0), 140.0) * 0.6 * (1.0 - cv);
+    float wet = mix(0.55, 1.0, clean) * (1.0 - foam);
+    col = mud * (uSunCol * (0.15 + 0.85 * max(dot(N, uSunDir), 0.0)) + uSkyCol * (0.55 + 0.45 * N.y));
+    col += uSunCol * pow(max(dot(N, H), 0.0), mix(60.0, 220.0, clean)) * mix(0.35, 0.9, clean) * wet;
     vec3 R = reflect(-V, N);
     vec3 sky = mix(uFogCol, uSkyCol * 1.8, smoothstep(0.0, 0.5, R.y));
-    col = mix(col, sky, fres * mix(0.35, 0.9, clean) * (1.0 - cv));
+    col = mix(col, sky, fres * mix(0.25, 0.8, clean) * wet);
     col += mud * glowLight(vW, N);
-    alpha = smoothstep(0.03, 0.4, hm) * mix(1.0, 0.85, clean);
+    alpha = smoothstep(0.03, 0.35, hm) * mix(1.0, 0.85, clean);
   }
   // --- indicadores: color del fenómeno resaltado desde lejos, borde y flechas de movimiento
   if (uArrows > 0.5 && (lava || pdc || lahar)) {
     vec3 kc = lava ? vec3(1.0, 0.55, 0.12) : pdc ? vec3(0.78, 0.52, 1.0) : vec3(1.0, 0.68, 0.22);
-    float far = max(0.3, smoothstep(1.0, 6.0, dist));
-    col = mix(col, kc * (uSunCol * 0.25 + uSkyCol + 0.3), far * 0.6);
+    float far = smoothstep(2.0, 9.0, dist);
+    col = mix(col, kc * (uSunCol * 0.25 + uSkyCol + 0.3), far * 0.55);
     float depth = lava ? hl : pdc ? vHp : vEx;
     float edge = 1.0 - smoothstep(0.05, 0.6, depth);
-    col = mix(col, kc * 1.2, edge * 0.5);
+    col = mix(col, kc * 1.1, edge * 0.25 * (0.4 + 0.6 * far));
     float spacing = clamp(dist * 0.03, 0.035, 0.9);
-    float ch = chevrons(vXY, vVel, spacing, uTime);
-    col = mix(col, kc * (lava ? 2.2 : 1.6), ch * 0.9);
-    alpha = max(alpha, ch * 0.95);
+    float ch = chevrons(vXY, vVel, spacing, uTime) * (0.35 + 0.65 * smoothstep(1.5, 6.0, dist));
+    col = mix(col, kc * (lava ? 2.0 : 1.5), ch * 0.75);
+    alpha = max(alpha, ch * 0.85);
     alpha = max(alpha, far * 0.85);
   }
   col = fogApply(col, vW);

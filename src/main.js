@@ -17,6 +17,7 @@ import { createTerrain } from './terrain.js';
 import { createOverlays, Labels } from './overlays.js';
 import { FX } from './fx.js';
 import { Forest } from './forest.js';
+import { Volumes, VolumePass } from './volume.js';
 import { Ensemble, STYLES } from './ensemble.js';
 import { Sound } from './audio.js';
 import { lineChart, barChart, histChart, fmtT, fmtN } from './charts.js';
@@ -41,7 +42,7 @@ const setLoad = (t, f) => { $('loadtxt').textContent = t; if (f != null) $('lbar
 const fail = m => { $('loading').innerHTML = `<div><b>LLAIMA 3D</b><div class="err">${m}</div></div>`; };
 
 let D, geo, hAt, renderer, scene, camera, controls, composer, bloom, sky, stars;
-let sol, run, terr, ovl, fx, labels, ens = null, src, forest, player, vsum = null;
+let vol, volPass, overScene, sol, run, terr, ovl, fx, labels, ens = null, src, forest, player, vsum = null;
 const snd = new Sound();
 let gaugePts = [], allPts = [], idx = {}, sites = [];
 const series = { gauges: [] };
@@ -96,11 +97,16 @@ async function boot() {
   fx = new FX(scene, hAt);
   forest = new Forest(scene, D, sol, hAt, terr.shared, S.lite ? 6000 : 28000);
   fx.density = S.lite ? 0.45 : 1;
+  // nubes volumétricas (columna, paraguas, vapor) y escena que se dibuja encima (incandescencia, rayos)
+  vol = new Volumes(D, terr); vol.setQuality(S.lite); fx.volumetric = true;
+  overScene = new THREE.Scene(); for (const m of [fx.glow.mesh, fx.bolt]) { scene.remove(m); overScene.add(m); }
   labels = new Labels($('labels'), camera, hAt, () => S.ex);
   // post-proceso
   const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: S.lite ? 0 : 2 });
+  rt.depthTexture = new THREE.DepthTexture(innerWidth, innerHeight, THREE.UnsignedIntType);
   composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(scene, camera));
+  volPass = new VolumePass(vol, camera, overScene); composer.addPass(volPass);
   bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), 0.6, 0.5, 2.4); composer.addPass(bloom); bloom.enabled = !S.lite;
   composer.addPass(new OutputPass());
   setupPoints(); buildLabels(); buildUI(); setupInput();
@@ -112,7 +118,7 @@ async function boot() {
   S.playing = true; $('play').textContent = '❚❚';
   toast('Simulación iniciada · arrastra para mover, botón derecho para rotar, rueda para acercar, clic para medir');
   last = performance.now(); requestAnimationFrame(frame);
-  window.APP = { fxWarm, S, get forest() { return forest; }, get player() { return player; }, run, sol, src: () => src, camera, controls, goView, applyScenario, setOverlay, flyTo, readback, terr, fx };
+  window.APP = { get vol() { return vol; }, fronts: () => vsum && vsum.spots && vsum.spots.fronts, fxWarm, S, get forest() { return forest; }, get player() { return player; }, run, sol, src: () => src, camera, controls, goView, applyScenario, setOverlay, flyTo, readback, terr, fx };
 }
 
 function makeStars() {
@@ -184,6 +190,7 @@ function applyScenario(key, fromPreset) {
   if (hadSnap !== sol.baseMonth) resnapGauges();
   fx.clear(); ovl.setVents(src.vents, S.ex);
   events = []; evFlags = {}; series.gauges = gaugePts.map(() => []); $('log').innerHTML = '';
+  histCache.clear(); if (vol) { vol.cur = null; vol.colDens = 0; }
   S.computing = true; S.playT = 0; S.lastRec = -1e9; csmp = null; vsum = null; player.t = -1;
   S.runTo = null; S.tEnd = Math.min(4 * 86400, src.tEnd + 3 * 3600);
   $('scenDesc').textContent = sc.desc;
@@ -237,6 +244,7 @@ function updateLighting() {
   scene.background = sky.visible ? null : NIGHT_BG;
   terr.FU.uLavaGain.value = 1.4; sh.uNight.value = NIGHT;
   // partículas
+  vol.setLighting(new THREE.Vector3(dir.x, -dir.z, dir.y), sh.uSunCol.value, sh.uSkyCol.value, sh.uGroundCol.value, sh.uFogCol.value, sh.uFogD.value, sh.uAshHaze.value);
   const sv = sunDir.clone().transformDirection(camera.matrixWorldInverse);
   fx.setLighting(sv, sh.uSunCol.value, sh.uSkyCol.value, sh.uFogCol.value, sh.uFogD.value, camera.position, sunDir, performance.now() / 1000);
   return sp;
@@ -717,6 +725,21 @@ function onResize() {
 }
 
 // Desgasificación: flujo de calor con ciclo de ~7 días, humedad y temperatura del aire en la cumbre
+// historia de la columna sostenida en el instante t: edad del episodio, tiempo desde que terminó, tasa y alturas
+const histCache = new Map();
+function plumeHist(t) {
+  const key = S.scen + ':' + Math.round(t / 20);
+  if (histCache.has(key)) return histCache.get(key);
+  if (histCache.size > 4000) histCache.clear();
+  const TH = 2e3, dtS = 30, M = x => src.at(Math.max(0, x), true).MER;
+  let tl = t, off = 0;
+  if (M(t) <= TH) { let k = 0; while (k < 720 && tl > 0 && M(tl) <= TH) { tl -= dtS; k++; } if (M(tl) <= TH) { histCache.set(key, null); return null; } off = t - tl; }
+  let t0 = tl, mer = 0; for (let k = 0; k < 2880 && t0 > 0 && M(t0 - dtS) > TH; k++) { t0 -= dtS; mer = Math.max(mer, M(t0)); }
+  mer = Math.max(mer, M(tl));
+  const P = src.plume(mer); if (!P) { histCache.set(key, null); return null; }
+  const h = { age: t - t0, off, mer, Ht: P.Ht, Hnb: P.Hnb, xTop: P.xTop };
+  histCache.set(key, h); return h;
+}
 const RH_MONTH = [0.55, 0.55, 0.62, 0.72, 0.82, 0.88, 0.88, 0.85, 0.80, 0.74, 0.66, 0.58];
 function fumState() {
   const { ms, off } = simDate(S.playT); const days = ms / 86400000;
@@ -738,7 +761,7 @@ let drT = 0;
 let slowN = 0;
 function dynRes(now) {
   if (now - drT < 1500) return; drT = now;
-  if (fpsS < 18 && !S.lite) { if (++slowN >= 3) { S.lite = true; S.show.trees = false; forest.visible = false; bloom.enabled = false; fx.density = 0.45; S.prMax = 0.85;
+  if (fpsS < 18 && !S.lite) { if (++slowN >= 3) { S.lite = true; S.show.trees = false; forest.visible = false; bloom.enabled = false; fx.density = 0.45; S.prMax = 0.85; vol.setQuality(true);
     toast('Tu equipo va lento: activé el modo liviano (sin bosque 3D ni resplandor). Puedes cambiar la calidad en el panel derecho.'); } } else slowN = 0;
   let pr = S.pr;
   if (fpsS < 26 && pr > 0.6) pr = Math.max(0.6, pr - 0.15);
@@ -787,9 +810,12 @@ function frame(now) {
   if (S.show.fx) {
     const P = st && st.MER > 50 ? src.plume(st.MER) : null;
     const visSpeed = clamp(S.playing ? Math.sqrt(Math.max(1, S.speed)) * 0.5 : 1, 0.5, 5);
-    fx.update(dtr * visSpeed, { src: st, plume: P, vents: src.vents, wind: src.wind, phreatic: S.scen === 'freatica', fumarole: st && st.active ? 2.5 : 1, fum: fumState() });
+    fx.update(dtr * visSpeed, { src: st, plume: P, vents: src.vents, wind: src.wind, phreatic: S.scen === 'freatica', fumarole: st && st.active ? 2.5 : 1, fum: fumState(), night: NIGHT });
     fx.write(camera, S.ex);
-  }
+    const vb = fx.volParams || {};
+    vol.update(dtr * visSpeed, { src: st || { MER: 0 }, plume: P, vents: src.vents, wind: src.wind, hAt, ex: S.ex, phreatic: S.scen === 'freatica', hist: plumeHist(S.playT),
+      fum: { F: fx.fumF, u: fx.fumU, dh: fx.fumDh, L: fx.fumL, dens: vb.fumDens || 0 }, glow: fx.ventGlow || 0, night: NIGHT, flash: fx.boltLife > 0 ? fx.flash : null });
+  } else { vol.on = false; vol.box.visible = false; }
   labels.update(innerWidth, innerHeight, S.show.labels);
   if (snd.on) {
     const cp = camera.position, v = src.vents[0];

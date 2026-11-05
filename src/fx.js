@@ -49,9 +49,9 @@ void main(){
     float v = 1.0 - length(p - c) / rad;
     if (v > best) { best = v; cb = c; rb = rad; }
   }
-  float base = smoothstep(0.0, 0.3, best + (n - 0.5) * 0.35);
+  float base = smoothstep(-0.05, 0.55, best + (n - 0.5) * 0.4);
   float er = mix(0.05, 0.45, vAge * vAge);
-  float dens = smoothstep(er, er + 0.22, base * (0.55 + 0.9 * n) - 0.08);
+  float dens = smoothstep(er, er + 0.45, base * (0.55 + 0.9 * n) - 0.05) * (1.0 - smoothstep(0.75, 1.0, r));
   if (dens < 0.01) discard;
   vec2 lp = (p - cb) / rb;
   vec3 nrm = normalize(vec3(lp * 0.9 + (w - 0.5) * 0.8, sqrt(max(0.0, 1.0 - dot(lp, lp))) + 0.15));
@@ -146,7 +146,7 @@ export class FX {
     const dens = this.density ?? 1;
     const emit = (key, rate) => { this.acc[key] = (this.acc[key] || 0) + rate * dtv * dens; const n = Math.floor(this.acc[key]); this.acc[key] -= n; return Math.min(n, 400); };
     // ---------------- columna eruptiva
-    if (s.MER > 50 && P) {
+    if (s.MER > 50 && P && !this.volumetric) {
       const lg = Math.log10(s.MER);
       let n = emit('plume', 30 + 26 * (lg - 2));
       const steamy = ctx.phreatic ? 1 : 0;
@@ -176,13 +176,13 @@ export class FX {
       const vF = Math.sqrt(2 * 9.81 * s.fountain);
       const n = emit('fount', 120 + s.fountain * 0.5);
       // halo incandescente sobre la boca
-      const nh = emit('halo', 3);
+      const nh = emit('halo', 3 * (0.2 + 0.8 * (ctx.night ?? 1)));
       for (let k = 0; k < nh; k++) this.glow.add(vx0 + (rnd() - 0.5) * 80, vy0 + (rnd() - 0.5) * 80, vz0 + s.fountain * (0.2 + 0.4 * rnd()), 0, 0, 2, 2.5, s.fountain * (0.7 + 0.5 * rnd()), s.fountain * 1.1, FLAME, 1, 0.42, 0.12, 1, 0.22);
       for (let k = 0; k < n; k++) {
         const v = vents[(rnd() * vents.length) | 0] || v0;
         const th = (1 - Math.pow(rnd(), 2)) * 0.25, a = rnd() * 6.283, sp = vF * (0.55 + 0.5 * rnd());
         this.glow.add(v.x * 1000 + (rnd() - 0.5) * 60, v.y * 1000 + (rnd() - 0.5) * 60, this.hAt(v.x, v.y) + 15,
-          Math.sin(th) * Math.cos(a) * sp, Math.sin(th) * Math.sin(a) * sp, Math.cos(th) * sp, 30, 26 + 34 * rnd(), 10, SPARK, 1, 0.5 + 0.25 * rnd(), 0.14, 1, 2.2, 0.004);
+          Math.sin(th) * Math.cos(a) * sp, Math.sin(th) * Math.sin(a) * sp, Math.cos(th) * sp, 30, 26 + 34 * rnd(), 10, SPARK, 1, 0.42 + 0.2 * rnd(), 0.1, 1, 2.2 * (0.3 + 0.7 * (ctx.night ?? 1)), 0.004);
       }
     }
     // ---------------- explosiones estrombolianas y balística
@@ -200,7 +200,7 @@ export class FX {
             200, 20 + D * 25, 10, BOMB, 1, 0.5, 0.15, 1, 4.0, 0.9 * A / (2 * m));
         }
         // bocanada de ceniza de la explosión
-        for (let k = 0; k < 14; k++) this.smoke.add(vx0 + (rnd() - 0.5) * 120, vy0 + (rnd() - 0.5) * 120, vz0, (rnd() - 0.5) * 20, (rnd() - 0.5) * 20, 40 + 50 * rnd(), 120 + 60 * rnd(), 80, 500, SMOKE, 0.2, 0.18, 0.17, 0.8, 0.6);
+        if (!this.volumetric) for (let k = 0; k < 14; k++) this.smoke.add(vx0 + (rnd() - 0.5) * 120, vy0 + (rnd() - 0.5) * 120, vz0, (rnd() - 0.5) * 20, (rnd() - 0.5) * 20, 40 + 50 * rnd(), 120 + 60 * rnd(), 80, 500, SMOKE, 0.2, 0.18, 0.17, 0.8, 0.6);
         this.boom = Math.min(1, this.boom + 0.6 * s.ballistic); this.boomEvent = Math.max(this.boomEvent || 0, s.ballistic * (s.pulse ? 1 : 0.5));
       }
     }
@@ -221,7 +221,9 @@ export class FX {
     // visibilidad del vapor condensado: crece con la humedad y el frío
     this.fumL = (110 + 1500 * Math.pow(fm.rh, 4)) * (1 + Math.max(0, 275 - fm.Ta) / 25);
     const rate = (2 + 2.6 * Math.sqrt(Qw / 1e7)) * ((s.MER > 50 || s.E > 0.5) ? 0.12 : 1);
-    for (let q = 0; q < this.fumaroles.length; q++) {
+    // con nubes volumétricas la pluma principal la dibuja el raymarching; aquí sólo quedan las bocas menores
+    this.volParams = { fumDens: Math.min(1.6, 0.45 + 0.55 * Math.sqrt(Qw / 4e7)) * ((s.MER > 50 || s.E > 0.5) ? 0.15 : 1) };
+    for (let q = this.volumetric ? 1 : 0; q < this.fumaroles.length; q++) {
       const [fx, fy, wgt] = this.fumaroles[q];
       const n = emit('fum' + q, rate * wgt * 6);
       for (let k = 0; k < n; k++) {
@@ -366,7 +368,7 @@ export class FX {
       if (z < g + 2 && vz < 0) {
         if (t === BOMB) {
           // impacto: polvo
-          for (let k = 0; k < 4; k++) this.smoke.add(x, y, g + 10, (Math.random() - 0.5) * 15, (Math.random() - 0.5) * 15, 6 + Math.random() * 10, 25 + Math.random() * 20, 25, 120, DUST, 0.30, 0.27, 0.25, 0.7);
+          for (let k = 0; k < 2; k++) this.smoke.add(x, y, g + 6, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10, 4 + Math.random() * 6, 12 + Math.random() * 10, 12, 45, DUST, 0.42, 0.39, 0.36, 0.45);
           E.type[i] = EMBER; E.v[o] = E.v[o + 1] = E.v[o + 2] = 0; E.p[o] = x; E.p[o + 1] = y; E.p[o + 2] = g + 2; E.life[i] = E.age[i] + 20; E.glow[i] *= 0.7; continue;
         }
         if (t === SPARK) { E.kill(i); continue; }
